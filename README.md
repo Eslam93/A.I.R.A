@@ -1,102 +1,242 @@
-# A.I.R.A. Backend v1
+# A.I.R.A.
 
-## Overview
-A.I.R.A. is a .NET 8 application that exposes both a backend API and a built-in Razor Pages UI. Users can search for a US-listed operating company, launch an asynchronous research job, watch the trace evolve live through polling, inspect the completed report, and then chat with that completed report through a SignalR-based report-chat experience.
+A.I.R.A. is an autonomous investment research backend built with .NET 8. It can analyze a publicly traded company, run the work asynchronously, show observable progress, return a structured report, and let the user chat with the completed report through a grounded OpenAI Responses flow.
 
-Version 1 is intentionally:
+The repository contains:
 
-- local and demo oriented
+- a controller-based ASP.NET Core Web API
+- a built-in Razor Pages UI
+- a bounded background job pipeline
+- mock, hybrid, and live execution paths
+- a standard fixed workflow and an opt-in autonomous coordinator/specialist workflow
+- report-grounded chat over SignalR
+
+This implementation was built against the A.I.R.A. case-study goal of combining data retrieval, reasoning, structured outputs, and explainability in one backend service.
+
+## Contents
+
+- [What This Repo Does](#what-this-repo-does)
+- [Current Product Shape](#current-product-shape)
+- [Run Paths](#run-paths)
+- [Architecture](#architecture)
+- [Solution Structure](#solution-structure)
+- [API Surface](#api-surface)
+- [Job Lifecycle and Failure Behavior](#job-lifecycle-and-failure-behavior)
+- [UI Flow](#ui-flow)
+- [Research Modes](#research-modes)
+- [Execution Modes](#execution-modes)
+- [Agentic Workflow](#agentic-workflow)
+- [Autonomous Mode](#autonomous-mode)
+- [Data Sources](#data-sources)
+- [Result Contract](#result-contract)
+- [Report Chat](#report-chat)
+- [Configuration](#configuration)
+- [Run Locally](#run-locally)
+- [Run With Live Providers](#run-with-live-providers)
+- [Run Autonomous Mode](#run-autonomous-mode)
+- [Run With Docker](#run-with-docker)
+- [Testing and Validation](#testing-and-validation)
+- [Trade-offs](#trade-offs)
+- [Known Limitations](#known-limitations)
+- [Extra Docs](#extra-docs)
+
+## What This Repo Does
+
+At a high level, A.I.R.A. supports this flow:
+
+1. Search for a company or ticker.
+2. Submit a research job.
+3. Run the job asynchronously in the background.
+4. Poll status and render live progress and trace.
+5. Produce a structured investment-style JSON report.
+6. Let the user chat with the completed report only.
+
+The system is intentionally:
+
 - unauthenticated
 - in-memory
-- execution-mode driven
-- mock-data backed in `mock` mode
-- live-provider backed in `live_required` mode
 - non-durable across restarts
+- reviewable and demo-friendly
+- configurable from fully local mock mode up to live-provider plus model-backed mode
 
-The service exposes the core research endpoints plus one lookup endpoint:
+## Current Product Shape
+
+The current implementation includes:
+
+- async job submission and status polling
+- a built-in web UI for submission, progress, report review, and chat
+- structured JSON result output
+- safe structured trace output
+- provider provenance in the final report
+- report-grounded chat over SignalR
+- execution modes for `Mock`, `Hybrid`, `LiveRequired`, and `Auto`
+- research modes for `Standard` and `Autonomous`
+- any-US-ticker lookup through SEC mapping in the live path
+- OpenAI Responses-based report synthesis, chat, coordinator, and specialist roles
+
+## Run Paths
+
+There are three practical ways to run the system.
+
+### 1. No-key local demo path
+
+Use this if you just cloned the repository and want the simplest working path.
+
+- `ResearchJobs:Mode = Auto`
+- `OpenAiResponses:Enabled = false`
+- live providers disabled
+
+Result:
+
+- `Auto` resolves to `Mock`
+- the built-in UI works
+- the API works
+- reports generate successfully
+- provider provenance shows seeded mock data
+- report chat stays disabled
+- autonomous mode should not be used
+
+See [QUICKSTART_NO_KEYS.md](./QUICKSTART_NO_KEYS.md).
+
+### 2. Live standard path
+
+Use this when you want live provider data and model-authored final reports.
+
+- `ResearchJobs:Mode = LiveRequired` or `Auto`
+- OpenAI Responses configured
+- SEC, Twelve Data, and Alpha Vantage configured
+- `researchMode = Standard`
+
+Result:
+
+- provider retrieval is live
+- report synthesis is model-authored
+- deterministic scoring still acts as a guardrail layer
+- chat is available once the report completes
+
+### 3. Autonomous path
+
+Use this when you want the more agentic coordinator/specialist flow.
+
+- OpenAI Responses configured
+- `researchMode = Autonomous`
+- execution mode typically `LiveRequired` or `Hybrid`
+
+Result:
+
+- a coordinator agent decides tool order and revisits
+- explicit evidence-gap review is performed
+- a specialist agent produces the final report
+- critique and repair occur before final backend validation
+
+## Architecture
+
+The app is a single ASP.NET Core process with several runtime layers:
+
+1. HTTP and UI layer
+   - controllers
+   - Razor Pages
+   - SignalR hub
+   - Swagger
+   - global exception middleware
+2. Application layer
+   - validation
+   - job submission and querying
+   - orchestration
+   - state transitions
+   - result assembly
+3. Domain layer
+   - provider contracts
+   - reasoner contracts
+   - enums and domain models
+   - deterministic scoring contracts
+4. Infrastructure layer
+   - in-memory job store
+   - in-memory chat thread store
+   - in-memory autonomous session store
+   - bounded channel queue
+   - live and mock providers
+   - OpenAI Responses adapters
+   - hosted worker
+   - configuration binding
+
+Core runtime sequence:
+
+1. Submit request hits the API.
+2. Identifier is validated and normalized.
+3. A queued job record is written to the in-memory store.
+4. The job is admitted to a bounded `Channel<T>` with `TryWrite`.
+5. A hosted background worker dequeues and processes the job in a fresh DI scope.
+6. The processor resolves execution mode and research mode.
+7. Data is gathered from the configured source stack.
+8. Deterministic assessment metrics are computed as guardrails.
+9. The configured synthesis flow produces the final report.
+10. The result is written back to the store.
+11. The UI polls the status endpoint and renders the trace.
+12. Once complete, chat can open against that exact stored report snapshot.
+
+## Solution Structure
+
+- `Aira.Api`
+  - controllers
+  - Razor Pages UI
+  - SignalR hub
+  - middleware
+  - prompt files
+  - composition root
+- `Aira.Application`
+  - orchestration
+  - submission/query services
+  - state machine
+  - result/status models
+  - report-chat orchestration
+  - autonomous orchestration
+- `Aira.Domain`
+  - provider contracts
+  - reasoner contracts
+  - enums
+  - domain models
+  - deterministic scoring services
+- `Aira.Infrastructure`
+  - live provider clients
+  - mock providers
+  - queue/store implementations
+  - hosted worker
+  - Responses integrations
+  - prompt providers
+  - execution-mode resolution
+  - ticker directory resolution
+- `Aira.Tests.Unit`
+  - validation
+  - scoring
+  - submission semantics
+  - provider behavior
+  - prompt loading
+  - report chat services
+  - autonomous coordinator logic
+- `Aira.Tests.Integration`
+  - API flows
+  - UI rendering
+  - SignalR chat flows
+
+## API Surface
+
+### Business endpoints
 
 - `POST /api/v1/research-jobs`
 - `GET /api/v1/research-jobs/{jobId}`
 - `GET /api/v1/research-jobs/{jobId}/result`
 - `GET /api/v1/tickers/search?q=...&limit=10`
 
-It also exposes one operational endpoint:
+### Operational endpoint
 
 - `GET /health`
 
-And one SignalR chat endpoint for the built-in report chat UI:
+### SignalR endpoint
 
 - `/hubs/report-chat`
 
-## Architecture
-The application uses a controller-based ASP.NET Core Web API plus Razor Pages on top of an in-process asynchronous job pipeline.
-
-Core runtime flow:
-
-1. The API validates and normalizes an identifier.
-2. A job record is written to an in-memory store.
-3. The job is admitted to a bounded `Channel<T>` queue with non-blocking `TryWrite`.
-4. A hosted background worker dequeues jobs and creates a per-job DI scope.
-5. The orchestrator resolves the execution mode, collects provider data, applies retry/adaptive logic, computes deterministic guardrail metrics, and invokes the configured report-synthesis reasoner.
-6. The final result is stored in memory and later returned by the result endpoint.
-7. The report UI polls the status endpoint and renders the current trace timeline.
-8. Once the report is complete, the UI can open a SignalR chat session bound to that exact completed report snapshot.
-
-The provider layer now supports four execution modes:
-
-- `mock`: use seeded providers and deterministic synthesis only
-- `hybrid`: prefer live providers, but allow seeded fallback with explicit provenance
-- `live_required`: use live providers only and fail or degrade without seeded fallback
-- `auto`: choose `mock` when the live provider stack or report-synthesis model is incomplete; otherwise choose `live_required`
-
-Research flow modes:
-
-- `Standard`: the stable fixed-domain pipeline already in production
-- `Autonomous`: a Responses-based coordinator agent gathers evidence through bounded internal tools, runs explicit evidence-gap review, then hands off to a stock-report specialist agent for final synthesis
-
-Live provider stack:
-
-- SEC EDGAR for ticker resolution, company identity, filings, and financial statements
-- Twelve Data for market snapshots
-- Alpha Vantage for news coverage
-- seeded mocks remain available for `mock` mode and `hybrid` fallback only
-
-Agent observability is exposed through:
-
-- structured logs with `jobId`, `identifier`, `correlationId`, and `step`
-- a safe `trace` array in the final result
-- a live `trace` snapshot in the status response
-- report-chat stream events over SignalR for grounded follow-up answers
-
-## Project Structure
-- `Aira.Api`: controllers, Razor Pages UI, SignalR hub, HTTP pipeline, Swagger, middleware, composition root
-- `Aira.Application`: orchestration, validation, job lifecycle, result assembly
-- `Aira.Domain`: domain models, enums, provider contracts, reasoner contracts, scoring rules
-- `Aira.Infrastructure`: in-memory store, queue, hosted worker, seeded providers, live-provider clients, deterministic guardrails, Responses-based report synthesis, prompt loaders, report-chat services, in-memory thread store
-- `Aira.Tests.Unit`: unit coverage for validation, scoring, selection, state transitions, and submission semantics
-- `Aira.Tests.Integration`: API, Razor Pages, and SignalR coverage for happy path, degraded path, failure path, overload behavior, fallback behavior, and report chat
-
-## API Endpoints
-### Search tickers
-`GET /api/v1/tickers/search?q=ap&limit=10`
-
-Response:
-
-```json
-{
-  "items": [
-    {
-      "symbol": "AAPL",
-      "companyName": "Apple Inc.",
-      "exchange": "Nasdaq",
-      "cik": "0000320193"
-    }
-  ]
-}
-```
-
 ### Submit a job
-`POST /api/v1/research-jobs`
 
 Request:
 
@@ -107,15 +247,14 @@ Request:
 }
 ```
 
-`researchMode` is optional. Allowed values:
+Notes:
 
-- `Standard` (default)
-- `Autonomous`
+- `identifier` is required
+- `researchMode` is optional
+- allowed research modes are `Standard` and `Autonomous`
+- if omitted, `Standard` is used
 
-Success:
-
-- `202 Accepted`
-- `Location: /api/v1/research-jobs/{jobId}`
+Success returns `202 Accepted`:
 
 ```json
 {
@@ -127,10 +266,23 @@ Success:
 }
 ```
 
-### Check job status
+### Job status
+
 `GET /api/v1/research-jobs/{jobId}`
 
-Success:
+Returns a status document that includes:
+
+- job identity
+- timestamps
+- current step
+- warnings
+- live trace snapshot
+- error if failed
+- `researchMode`
+- `activeAgent`
+- `agentPhase`
+
+Example:
 
 ```json
 {
@@ -151,88 +303,186 @@ Success:
 }
 ```
 
-### Get final result
+### Job result
+
 `GET /api/v1/research-jobs/{jobId}/result`
 
-Responses:
+Returns:
 
 - `202 Accepted` while queued or running
-- `200 OK` with the completed result payload
+- `200 OK` with the completed report
 - `409 Conflict` with `ProblemDetails` when the job failed
 - `404 Not Found` with `ProblemDetails` when the job does not exist
 
-### Built-in UI
-Development launches into the built-in UI at `/` by default.
+### Ticker search
 
-Pages:
+`GET /api/v1/tickers/search?q=ap&limit=10`
 
-- `/` for ticker selection and async job submission
-- `/reports/{jobId}` for progress polling, completed report rendering, and `Chat with this report`
+Example response:
 
-### Report chat hub
-`/hubs/report-chat`
+```json
+{
+  "items": [
+    {
+      "symbol": "AAPL",
+      "companyName": "Apple Inc.",
+      "exchange": "Nasdaq",
+      "cik": "0000320193"
+    }
+  ]
+}
+```
 
-Hub methods:
+Notes:
 
-- `CreateThread(Guid jobId)`
-- `SendMessage(string threadId, string message)`
-- `ResumeStream(string threadId, long lastSequence)`
-- `CancelStream(string threadId)`
+- minimum query length is `2`
+- the default limit is `10`
+- the maximum limit is `20`
 
-## Async Job Lifecycle
-The public job states are:
+## Job Lifecycle and Failure Behavior
+
+Public job states:
 
 - `Queued`
 - `Running`
 - `Completed`
 - `Failed`
 
-Allowed transitions are:
+Allowed transitions:
 
 - `Queued -> Running`
 - `Running -> Completed`
 - `Running -> Failed`
 
-Jobs are processed asynchronously by a hosted background worker. Submission is non-blocking: the request thread never waits for queue capacity. When the queue is full, the API returns `503 Service Unavailable` instead of stalling.
+Queue behavior:
 
-The built-in `/reports/{jobId}` page polls the status endpoint every 2 seconds while the job is non-terminal and renders the current `trace` as a progress timeline.
+- the queue is a bounded `Channel<ResearchJobQueueItem>`
+- API admission uses `TryWrite`
+- request threads never wait for queue capacity
+- if the queue is full, the API returns `503 Service Unavailable`
+- the provisional job record is removed if queue admission fails
 
-## Queue Admission and Overload Behavior
-The queue is a bounded `Channel<ResearchJobQueueItem>` with:
+Status and result behavior:
 
-- `QueueCapacity = 100` by default
-- `FullMode = Wait`
-- `TryWrite` admission semantics at the API boundary
+- `GET /api/v1/research-jobs/{jobId}` returns the latest state, step, warnings, live trace, and mode metadata
+- `GET /api/v1/research-jobs/{jobId}/result` returns `202` until a terminal state exists
+- failed jobs return `409` with `ProblemDetails`
+- unknown jobs return `404`
+- invalid request payloads return `400`
+- unresolved or unsupported identifiers return `422`
 
-Submission order is:
+Timeout behavior:
 
-1. validate identifier
-2. allocate `jobId` and `correlationId`
-3. write the provisional record to the store
-4. attempt `TryWrite`
-5. remove the record if queue admission fails
-6. return `202` or `503`
+- `ResearchJobs__JobTimeoutMs` defaults to `90000`
+- live jobs enforce a minimum effective timeout of 90 seconds so provider retrieval and synthesis are not cut off too aggressively
 
-Queue-full failure example:
+All non-success API errors use RFC 7807 `ProblemDetails`.
 
-```json
-{
-  "type": "/problems/queue-capacity-exceeded",
-  "title": "Queue capacity exceeded.",
-  "status": 503,
-  "detail": "The service is temporarily unable to accept additional research jobs.",
-  "instance": "/api/v1/research-jobs",
-  "traceId": "0HN1234567890:00000001",
-  "errorCode": "QueueCapacityExceeded"
-}
-```
+## UI Flow
 
-The response also includes:
+The built-in UI is served from `Aira.Api` and is part of the same app.
 
-- `Retry-After: 5`
+### Pages
 
-## Agent Workflow
-The workflow uses these public step names:
+- `/`
+  - company search
+  - research mode selection
+  - job submission
+- `/reports/{jobId}`
+  - live progress
+  - report rendering
+  - provider provenance
+  - progress drawer
+  - grounded chat once the report is ready
+
+### UX sequence
+
+1. Search for a company or ticker.
+2. Choose `Standard` or `Autonomous`.
+3. Submit the job.
+4. Watch the progress bar, current status, and trace timeline.
+5. Review the completed report.
+6. Chat with the report once the thread is ready.
+
+The status page keeps the progress panel secondary so the report remains the main focus after completion.
+
+## Research Modes
+
+Research mode controls how the report is orchestrated.
+
+### `Standard`
+
+This is the stable fixed pipeline.
+
+It always follows the same high-level sequence:
+
+1. identifier resolution
+2. research plan creation
+3. source collection
+4. quality assessment
+5. adaptive branching
+6. synthesis
+7. final reflection
+8. completion
+
+Use `Standard` when:
+
+- running without keys
+- demonstrating the simplest path
+- you want predictable orchestration
+
+### `Autonomous`
+
+This is the advanced multi-agent path.
+
+It uses:
+
+- a Responses-based coordinator agent
+- bounded internal tools only
+- explicit evidence-gap review
+- specialist handoff
+- specialist critique and repair
+
+Use `Autonomous` when:
+
+- OpenAI Responses is configured
+- you want to demonstrate stronger agent behavior
+- you want the coordinator/specialist handoff flow
+
+## Execution Modes
+
+Execution mode controls the provider and fallback strategy.
+
+### `Mock`
+
+- use seeded data only
+- deterministic and no-key friendly
+
+### `Hybrid`
+
+- prefer live providers
+- allow seeded fallback
+- fallback is explicit in provenance and trace
+
+### `LiveRequired`
+
+- use live providers only
+- seeded fallback is disabled for main report generation
+- critical live-source failure fails the job
+- non-critical live-source failure degrades the report
+
+### `Auto`
+
+Default behavior:
+
+- resolve to `Mock` when the live provider stack or report-synthesis model is not fully configured
+- resolve to `LiveRequired` when the live and model stack is configured
+
+This makes the repo safe for fresh local clones while still allowing full live execution in configured environments.
+
+## Agentic Workflow
+
+The standard workflow uses these public step names:
 
 1. `IdentifierResolution`
 2. `ResearchPlanCreation`
@@ -248,7 +498,69 @@ Trace-only special steps:
 - `ProviderRetry`
 - `ProviderFallback`
 
-Autonomous-only trace phases:
+The standard flow is still genuinely multi-step:
+
+- it decides what domains are needed
+- it collects from multiple sources independently
+- it adapts to missing data, retries, contradictions, and low-news conditions
+- it synthesizes the final report only after the evidence package is assembled
+
+## Autonomous Mode
+
+Autonomous mode adds a more model-driven orchestration path.
+
+### Coordinator role
+
+The coordinator:
+
+- resolves the ticker
+- decides tool order
+- revisits tools when needed
+- gathers evidence
+- reviews evidence gaps
+- decides when to hand off
+
+Approved internal tools are bounded to the tool registry. There is no open web browsing.
+
+Tool catalog:
+
+- `resolveTicker`
+- `getCompanyProfile`
+- `getMarketSnapshot`
+- `getFinancialStatements`
+- `getNewsCoverage`
+- `getFilingCoverage`
+- `getEvidenceStatus`
+- `handoffToSpecialist`
+
+### Specialist role
+
+The specialist receives a handoff packet only. It does not call live-provider tools directly.
+
+The handoff packet includes:
+
+- resolved company identity
+- evidence summary
+- source catalog and provenance
+- warnings and missing-source notes
+- deterministic guardrail metrics
+- coordinator plan summary
+- unresolved questions and contradictions
+
+The specialist is responsible for:
+
+- `signal`
+- `confidence`
+- `thesis`
+- `insights`
+- `thesisDetails`
+- `insightDetails`
+- `signalDetails`
+- `confidenceDetails`
+
+### Reflection phases
+
+Autonomous trace phases include:
 
 - `CoordinatorPlanning`
 - `CoordinatorToolExecution`
@@ -259,73 +571,34 @@ Autonomous-only trace phases:
 - `SpecialistCritique`
 - `OutputValidation`
 
-The workflow does real orchestration rather than one-shot prompting:
+### Validation authority
 
-- it plans the required domains
-- collects each source independently
-- retries according to source-specific policy
-- scores evidence quality and direction
-- adapts weights and warnings based on intermediate conditions
-- synthesizes a structured report through the Responses API
-- validates source linkage, signal constraints, and confidence bounds before finalizing
+Even in autonomous mode, backend validation remains final authority:
 
-In `Autonomous` mode, the orchestration is explicitly split:
+- cited source ids must exist
+- `signal` must be valid
+- `confidence` must be `0..100`
+- `insights` must be between `2` and `5`
+- `evidenceScore < 55` forces a final backend `Neutral` override
+- confidence is bounded by deterministic guardrails
 
-- a `Coordinator` agent decides tool order and revisits using only approved internal tools
-- an evidence-gap review runs before handoff
-- a `Stock Report Specialist` agent receives only the handoff packet, writes the draft, critiques it once, and repairs once if needed
-- backend validation remains the final authority on citations, signal values, confidence bounds, and schema shape
+## Data Sources
 
-Once a report reaches `Completed`, the separate report-chat flow can answer follow-up questions. That chat is intentionally bounded to the completed report only and never triggers fresh research in v1.
+### Live sources
 
-## Adaptive Branching Rules
-The implementation applies these locked rules:
+- SEC EDGAR
+  - ticker resolution
+  - company identity
+  - filings
+  - most financial statements
+- Twelve Data
+  - market snapshot
+- Alpha Vantage
+  - news coverage
 
-- critical source missing after final attempt: fail the job
-- non-critical source missing after final attempt: continue with warning and lower confidence
-- market snapshot retries on transient failure
-- low-news mode activates when news quality is below `0.40` or fewer than two news items exist
-- low-news mode reduces news weight and shifts weight toward financial statements and filings
-- unresolved contradiction lowers confidence and is reflected in trace
-- `evidenceScore < 55` forces a `Neutral` final signal
-- OpenAI misconfiguration triggers deterministic fallback plus warning and `ProviderFallback`
+### Mock sources
 
-## Deterministic Guardrails
-Baseline weights:
-
-- `CompanyProfile = 0.10`
-- `MarketSnapshot = 0.15`
-- `FinancialStatement = 0.30`
-- `News = 0.20`
-- `FilingExcerpt = 0.25`
-
-Low-news weights:
-
-- `CompanyProfile = 0.10`
-- `MarketSnapshot = 0.15`
-- `FinancialStatement = 0.40`
-- `News = 0.10`
-- `FilingExcerpt = 0.25`
-
-Core formulas:
-
-- `completenessScore = round(sum(weight * availability) * 100)`
-- `evidenceScore = round(sum(weight * availability * qualityScore) * 100)`
-- `directionalScore = round(sum(weight * availability * qualityScore * stanceScore) * 100)`
-- `agreementScore = round((1 - contradictionScore) * 100)`
-- `confidence = clamp(baseConfidence - penalties, 0, 100)`
-
-Signal rules:
-
-- `evidenceScore < 55` => `Neutral`
-- `directionalScore >= 20` => `Bullish`
-- `directionalScore <= -20` => `Bearish`
-- otherwise => `Neutral`
-
-## Data Coverage
-In live execution, A.I.R.A can analyze any US-listed operating company that can be resolved through the SEC ticker/company mapping and supported by the configured live providers.
-
-In mock execution, the built-in seeded catalog currently covers:
+The seeded mock catalog covers:
 
 - `AAPL`
 - `MSFT`
@@ -338,46 +611,39 @@ In mock execution, the built-in seeded catalog currently covers:
 - `XOM`
 - `UNH`
 
-Seeded mode includes:
+In `Mock` mode, the app is fully deterministic and does not need external APIs.
 
-- company profile
-- market snapshot
-- financial statements
-- news coverage
-- filing excerpts
+### TSLA degraded scenario
 
-The seeded dataset is deterministic and checked into code. No live APIs are required for `mock` mode.
-
-Live-provider rollout:
-
-- `SecEdgar` resolves tickers and supplies company identity, filings, and most financial statements
-- `TwelveData` supplies market snapshots
-- `AlphaVantage` supplies news coverage
-- company profile is factual in live mode; seeded narrative scaffolding is not used in `live_required`
-
-## TSLA Degraded Scenario
-`TSLA` is the designated degraded scenario.
-
-Behavior per job execution:
+`TSLA` is the locked degraded seed path and behaves as follows per job execution:
 
 - market snapshot fails once with `TransientFailure`
-- the retry succeeds
-- news coverage contains exactly one low-quality item
-- the final signal is `Neutral`
+- retry succeeds
+- news coverage is sparse and low quality
+- final signal becomes `Neutral`
 
-Required final warnings:
+Required warnings include:
 
 - `Market snapshot required retry before successful retrieval.`
 - `Low news coverage reduced narrative confidence.`
 
-Required trace characteristics:
+## Result Contract
 
-- one `ProviderRetry`
-- one `AdaptiveBranching`
-- one `FinalReflection`
+Every completed report includes the original required top-level keys:
 
-## Result Schema
-Every completed result includes:
+```json
+{
+  "company": "...",
+  "thesis": "...",
+  "signal": "...",
+  "insights": [],
+  "sources": []
+}
+```
+
+The current implementation extends that schema with rich explainability data.
+
+### Current completed result shape
 
 ```json
 {
@@ -448,16 +714,31 @@ Every completed result includes:
 }
 ```
 
-Provider provenance is now explicit:
+### Provenance and traceability
 
-- `providerUsage` reports one entry per domain with `domain`, `status`, `origin`, `providerName`, `fallbackOccurred`, and `fallbackReason`
-- every `sourceDetails` item includes `providerOrigin`, `providerName`, and `fallbackOccurred`
-- `trace` includes explicit summaries such as `...was collected from live provider SEC EDGAR.` or `...used seeded mock fallback via SeededMock.`
-- `signalDetails`, `confidenceDetails`, and `synthesisDetails` explain the final assessment without exposing hidden chain-of-thought
-- `orchestrationDetails` records whether the report came from the standard pipeline or the autonomous coordinator/specialist handoff path
+The result explicitly captures:
 
-## Trace Semantics
-Each trace item contains:
+- `providerUsage`
+  - one entry per domain
+  - origin, provider name, fallback state, and fallback reason
+- `sourceDetails`
+  - source type, title, timestamp, provider origin, provider name, fallback state
+- `insightDetails`
+  - source ids for each insight
+- `thesisDetails`
+  - source ids supporting the thesis
+- `signalDetails`
+  - signal rationale and whether an override was applied
+- `confidenceDetails`
+  - confidence rationale and the bounded range
+- `synthesisDetails`
+  - synthesis mode, model, retries, fallback state
+- `orchestrationDetails`
+  - standard vs autonomous orchestration metadata
+
+### Trace semantics
+
+Each trace item includes:
 
 - `step`
 - `status`
@@ -465,28 +746,38 @@ Each trace item contains:
 - `sourceIds`
 - `timestampUtc`
 
-Trace values are intentionally safe. They show:
+Trace entries are intentionally safe:
 
-- observable actions
-- retry decisions
-- fallback decisions
-- evidence weighting decisions
-- confidence-related reflections
-
-Trace values do not expose hidden chain-of-thought.
+- they expose what the system did
+- they do not expose hidden chain-of-thought
 
 ## Report Chat
-The report chat experience is a separate OpenAI Responses-based explainer layer that sits on top of a completed report.
 
-Key design rules:
+The report chat is a separate Responses-based layer on top of a completed report.
+
+### Design rules
 
 - chat is available only for completed jobs
-- each chat thread is app-owned and tied to one completed report snapshot
-- chat is grounded only in the stored report, not in live providers or external browsing
-- the model can use report-grounding tools for source details, insight evidence, trace entries, and provider usage
-- chat threads are in-memory only and expire after 60 minutes of inactivity
+- each chat thread is app-owned
+- each chat thread is bound to one completed report snapshot
+- chat does not trigger fresh research
+- chat does not browse the web
+- chat answers only from the completed report
 
-Grounding tools available to the model:
+### Transport
+
+- SignalR hub: `/hubs/report-chat`
+
+Hub methods:
+
+- `CreateThread(Guid jobId)`
+- `SendMessage(string threadId, string message)`
+- `ResumeStream(string threadId, long lastSequence)`
+- `CancelStream(string threadId)`
+
+### Grounding tools
+
+The chat model can use:
 
 - `getReportSummary()`
 - `getSourceDetails(sourceIds[])`
@@ -494,17 +785,26 @@ Grounding tools available to the model:
 - `getTrace(step?, limit?)`
 - `getProviderUsage()`
 
-The chat prompt is loaded from `Aira.Api/Prompts/report-chat-system-prompt.txt`.
+### Thread behavior
+
+- in-memory only
+- expires after `60` minutes of inactivity
+- stores transcript and `previousResponseId`
+- survives within the running app only
 
 ## Configuration
+
 Configuration comes from:
 
 - `Aira.Api/appsettings.json`
 - `Aira.Api/appsettings.Development.json`
 - environment variables
 - `.env.example`
+- ASP.NET user-secrets if you choose to use them locally
 
-Relevant keys:
+### Main settings
+
+#### Research jobs
 
 - `ResearchJobs__QueueCapacity`
 - `ResearchJobs__MaxConcurrentJobs`
@@ -517,6 +817,9 @@ Relevant keys:
 - `ResearchJobs__TickerSearchMinimumQueryLength`
 - `ResearchJobs__TickerSearchDefaultLimit`
 - `ResearchJobs__TickerSearchMaxLimit`
+
+#### OpenAI Responses
+
 - `OpenAiResponses__Enabled`
 - `OpenAiResponses__ApiKey`
 - `OpenAiResponses__BaseUrl`
@@ -537,18 +840,35 @@ Relevant keys:
 - `OpenAiResponses__CoordinatorMaxToolRounds`
 - `OpenAiResponses__SpecialistCritiqueRetries`
 - `OpenAiResponses__AllowAutonomousStandardFallback`
+
+#### SEC EDGAR
+
 - `SecEdgar__Enabled`
 - `SecEdgar__DataBaseUrl`
 - `SecEdgar__MappingUrl`
 - `SecEdgar__UserAgent`
+
+#### Twelve Data
+
 - `TwelveData__Enabled`
 - `TwelveData__BaseUrl`
 - `TwelveData__ApiKey`
+
+#### Alpha Vantage
+
 - `AlphaVantage__Enabled`
 - `AlphaVantage__BaseUrl`
 - `AlphaVantage__ApiKey`
 
-Example hybrid-live configuration:
+### Important defaults
+
+- `ResearchJobs__Mode = Auto`
+- `OpenAiResponses__Enabled = false`
+- live providers disabled by default
+- `ResearchJobs__JobTimeoutMs = 90000`
+- `OpenAiResponses` default models are `gpt-5.4-nano`
+
+### Example hybrid-live setup
 
 ```bash
 ResearchJobs__Mode=Hybrid
@@ -560,7 +880,7 @@ AlphaVantage__Enabled=true
 AlphaVantage__ApiKey=your_alpha_vantage_key
 ```
 
-Example live-required configuration:
+### Example live-required setup
 
 ```bash
 ResearchJobs__Mode=LiveRequired
@@ -576,191 +896,237 @@ AlphaVantage__Enabled=true
 AlphaVantage__ApiKey=your_alpha_vantage_key
 ```
 
-Notes:
+### Example autonomous setup
 
-- SEC live access does not require an API key, but it does require a valid `User-Agent`.
-- `auto` resolves to `mock` when the live-provider stack or report-synthesis model is not fully configured.
-- In `hybrid`, a live-provider failure falls back to seeded data with explicit provenance.
-- In `live_required`, seeded fallback is disabled for the main research flow.
-- `ResearchJobs__JobTimeoutMs` now defaults to `90000`, and live jobs are enforced with a minimum 90-second effective timeout so provider fetches plus report synthesis are not cut off prematurely.
+```bash
+ResearchJobs__Mode=LiveRequired
+OpenAiResponses__Enabled=true
+OpenAiResponses__ApiKey=your_openai_key
+OpenAiResponses__CoordinatorModel=gpt-5.4-nano
+OpenAiResponses__SpecialistModel=gpt-5.4-nano
+OpenAiResponses__AllowAutonomousStandardFallback=false
+SecEdgar__Enabled=true
+SecEdgar__UserAgent="AIRA/1.0 you@example.com"
+TwelveData__Enabled=true
+TwelveData__ApiKey=your_twelve_data_key
+AlphaVantage__Enabled=true
+AlphaVantage__ApiKey=your_alpha_vantage_key
+```
 
-## Running Locally
+## Run Locally
+
+### Fastest no-key path
+
 From the repository root:
 
 ```bash
 dotnet restore
-dotnet run --project Aira.Api
+dotnet build Aira.sln
+dotnet run --project Aira.Api --launch-profile http
 ```
 
-Default local URLs come from ASP.NET Core launch settings. In Development, Swagger is available at `/swagger`.
+Open:
 
-Development now opens the built-in UI at `/` by default. The report page is at `/reports/{jobId}` after submission.
+- `http://localhost:5214/`
+- `http://localhost:5214/swagger`
+- `http://localhost:5214/health`
 
-## Running With Docker
-Build the image:
+Recommended for this path:
+
+- choose `Standard`
+- keep defaults
+- expect mock-backed reports
+- expect chat to remain disabled
+
+### Development URLs
+
+Current launch profiles:
+
+- `http://localhost:5214`
+- `https://localhost:7004`
+
+## Run With Live Providers
+
+To get live provider data, configure:
+
+- `SecEdgar`
+- `TwelveData`
+- `AlphaVantage`
+
+Recommended mode:
+
+- `ResearchJobs__Mode = LiveRequired`
+
+Notes:
+
+- SEC requires a valid `User-Agent`
+- live provider failures can fail or degrade the report depending on criticality
+- `LiveRequired` disables seeded fallback for main report generation
+
+## Run Autonomous Mode
+
+To use `Autonomous` mode, configure:
+
+- `OpenAiResponses__Enabled=true`
+- `OpenAiResponses__ApiKey`
+- `OpenAiResponses__CoordinatorModel`
+- `OpenAiResponses__SpecialistModel`
+
+Then submit:
+
+```json
+{
+  "identifier": "AAPL",
+  "researchMode": "Autonomous"
+}
+```
+
+Recommended setup:
+
+- `ResearchJobs__Mode = LiveRequired`
+- live providers enabled
+- `OpenAiResponses__AllowAutonomousStandardFallback=false`
+
+Without OpenAI configured:
+
+- autonomous mode should be considered unavailable
+
+## Run With Docker
+
+Build:
 
 ```bash
 docker build -t aira-backend .
 ```
 
-Run the container:
+Run:
 
 ```bash
 docker run --rm -p 8080:8080 aira-backend
 ```
 
-Override configuration with environment variables as needed:
+Run with live-required config:
 
 ```bash
-docker run --rm -p 8080:8080 -e ResearchJobs__Mode=LiveRequired -e OpenAiResponses__Enabled=true -e OpenAiResponses__ApiKey=... -e OpenAiResponses__ReportModel=gpt-5.4-nano -e OpenAiResponses__ChatModel=gpt-5.4-nano aira-backend
+docker run --rm -p 8080:8080 \
+  -e ResearchJobs__Mode=LiveRequired \
+  -e OpenAiResponses__Enabled=true \
+  -e OpenAiResponses__ApiKey=... \
+  -e OpenAiResponses__ReportModel=gpt-5.4-nano \
+  -e OpenAiResponses__ChatModel=gpt-5.4-nano \
+  -e SecEdgar__Enabled=true \
+  -e SecEdgar__UserAgent="AIRA/1.0 you@example.com" \
+  -e TwelveData__Enabled=true \
+  -e TwelveData__ApiKey=... \
+  -e AlphaVantage__Enabled=true \
+  -e AlphaVantage__ApiKey=... \
+  aira-backend
 ```
 
-## Running Tests
+The container listens on port `8080`.
+
+## Testing and Validation
+
 Run the full suite:
 
 ```bash
 dotnet test Aira.sln
 ```
 
+Current validation status from the latest full pass:
+
+- `dotnet build Aira.sln` passed
+- `dotnet test Aira.sln` passed
+- 41 tests total
+  - 26 unit
+  - 15 integration
+
 The test suite covers:
 
-- unit validation and scoring logic
-- submission and queue semantics
-- deterministic guardrail behavior
-- report-synthesis model selection and validation-repair mapping
-- prompt loading and in-memory chat thread expiry
-- Responses report-chat tool loop behavior
+- identifier validation
+- queue admission and overload behavior
+- state transitions
+- deterministic scoring rules
+- live-provider hybrid behavior
+- report synthesis validation and repair mapping
+- prompt loading
+- report chat thread expiry and tool loop behavior
 - Razor Pages rendering
-- SignalR report-chat streaming, replay, and cancellation
-- end-to-end API behavior, including degraded and overload paths
-
-## Optional OpenAI Adapter
-OpenAI support is optional. The local deterministic path works with no secrets.
-
-There is one OpenAI Responses integration surface with two roles:
-
-- report synthesis for `signal`, `confidence`, `thesis`, and `insights`
-- report chat over a completed report snapshot
-
-The report generator receives a normalized evidence package, provider provenance, warnings, and deterministic guardrail metrics. The model must return structured JSON, which the backend validates before accepting.
-
-Autonomous mode adds two more Responses roles:
-
-- `Coordinator`: bounded tool use only, no open web browsing
-- `Stock Report Specialist`: handoff-packet-only synthesis with one critique pass
-
-Guardrails:
-
-- `signal` must be `Bullish`, `Neutral`, or `Bearish`
-- `confidence` must be an integer `0..100`
-- `insights` must stay within `2..5`
-- all cited source ids must exist in the evidence catalog
-- `evidenceScore < 55` forces a backend `Neutral` override
-- model confidence is clamped to a deterministic confidence envelope
-- invalid model output gets one validation-repair retry before the selected execution mode decides fallback vs failure
-
-The current adapter uses mocked HTTP in tests only.
+- SignalR report chat flows
+- standard and autonomous end-to-end flows
 
 ## Trade-offs
-- In-memory storage keeps the implementation simple and fast to review, but jobs are lost on restart.
-- Mock mode guarantees deterministic local execution, but it is not live market truth.
-- Live-required mode is closer to the case-study target, but it introduces external dependency risk, rate limits, and model-output validation concerns.
-- The bounded in-process queue is sufficient for v1, but it is not a durable or distributed work system.
-- Deterministic scoring still exists as a guardrail layer even when report synthesis is model-authored.
-- OpenAI remains optional so local execution stays reliable, but `auto` mode intentionally downgrades to `mock` when the full live stack is incomplete.
-- `Autonomous` mode is more expressive and closer to the case-study ideal, but it is also more complex and depends more heavily on bounded prompt/tool discipline.
+
+- In-memory storage keeps the system simple and easy to review, but jobs and sessions are lost on restart.
+- Mock mode gives a reliable demo path, but it is not live market truth.
+- Hybrid mode is pragmatic, but it mixes live and seeded data by design.
+- LiveRequired mode is closer to the target production behavior, but it is more exposed to rate limits and upstream failures.
+- Deterministic scoring is retained as a guardrail layer even when the final report is model-authored.
+- The autonomous path is more agentic, but it is also more complex and more dependent on bounded prompt and tool discipline.
+- The UI is convenient for review and demos, but the core system is still backend-first.
 
 ## Known Limitations
+
 - Jobs are lost on restart.
 - Queue capacity is finite.
 - Queue overload returns `503 Service Unavailable`.
-- Live analysis depends on external APIs and may fail or degrade when those providers are unavailable or rate-limited.
-- `live_required` is restricted to US-listed operating companies resolvable through the SEC mapping and supported by the configured live providers.
-- Mock mode still uses a finite seeded catalog and does not represent live market truth.
-- There is no user cancel capability.
-- No persistent database or durable queue exists in v1.
-- No authentication or multi-tenant access control exists in v1.
-- Recurring monitoring is intentionally deferred; the current autonomous mode is per-job only and does not keep durable per-ticker memory.
+- There is no persistence layer.
+- There is no authentication or authorization.
+- There is no user cancel API for research jobs.
+- There is no distributed worker architecture.
+- Live analysis depends on external APIs and may degrade or fail when providers are slow, unavailable, or rate-limited.
+- Mock mode uses a finite seeded catalog.
+- Recurring monitoring is intentionally deferred.
+- Autonomous mode is bounded to approved internal tools and does not browse the open web.
 
-Valid submission sample:
+## Extra Docs
 
-```json
-{
-  "identifier": "AAPL"
-}
-```
+Additional repository docs:
 
-Pending result sample:
+- [QUICKSTART_NO_KEYS.md](./QUICKSTART_NO_KEYS.md)
+  - quickest clone-and-run path without any secrets
+- [CASE_STUDY_COVERAGE.md](./CASE_STUDY_COVERAGE.md)
+  - requirement-by-requirement coverage against the original case study
 
-```json
-{
-  "jobId": "3f0f2b1d-92b4-4e77-8d7f-9c3a8d58e2aa",
-  "status": "Running",
-  "message": "Result is not available yet."
-}
-```
-
-Failed result sample:
-
-```json
-{
-  "type": "/problems/job-failed",
-  "title": "Job failed.",
-  "status": 409,
-  "detail": "Financial statements were unavailable after final attempt.",
-  "instance": "/api/v1/research-jobs/3f0f2b1d-92b4-4e77-8d7f-9c3a8d58e2aa/result",
-  "traceId": "0HN1234567890:00000001",
-  "errorCode": "JobFailed",
-  "jobId": "3f0f2b1d-92b4-4e77-8d7f-9c3a8d58e2aa",
-  "identifier": "AAPL"
-}
-```
-
-Unsupported identifier sample:
-
-```json
-{
-  "type": "/problems/unsupported-identifier",
-  "title": "Unsupported identifier.",
-  "status": 422,
-  "detail": "The identifier is syntactically valid but could not be resolved as a supported US-listed operating company.",
-  "instance": "/api/v1/research-jobs",
-  "traceId": "0HN1234567890:00000001",
-  "errorCode": "UnsupportedIdentifier",
-  "identifier": "META"
-}
-```
+## Sequence Diagram
 
 ```mermaid
 sequenceDiagram
     participant Client
+    participant UI as Razor Pages UI
     participant API as Aira.Api
     participant Queue as Channel Queue
     participant Worker as Background Worker
-    participant Providers as Live/Mock Providers
-    participant Reasoner as Responses/Deterministic Synthesis
+    participant Providers as Live or Mock Providers
+    participant Synth as Report Synthesis
     participant Store as InMemory Store
+    participant Chat as Report Chat
 
-    Client->>API: POST /api/v1/research-jobs
-    API->>Store: add queued job record
+    Client->>UI: Search and submit company
+    UI->>API: POST /api/v1/research-jobs
+    API->>Store: Add queued job record
     API->>Queue: TryWrite(job)
-    Queue-->>API: accepted or full
-    API-->>Client: 202 Accepted or 503 Service Unavailable
+    Queue-->>API: Accepted or full
+    API-->>UI: 202 Accepted or 503
 
-    Worker->>Queue: dequeue job
-    Worker->>Store: mark Running
-    Worker->>Providers: resolve ticker and fetch five source domains
-    Providers-->>Worker: provider results
-    Worker->>Worker: score evidence, apply adaptive branching, build guardrails
-    Worker->>Reasoner: synthesize thesis and insights
-    Reasoner-->>Worker: structured result
-    Worker->>Store: mark Completed or Failed
+    Worker->>Queue: Dequeue job
+    Worker->>Store: Mark Running
+    Worker->>Providers: Resolve ticker and gather evidence
+    Providers-->>Worker: Provider results
+    Worker->>Worker: Apply scoring, retries, adaptive logic, and guardrails
+    Worker->>Synth: Produce final assessment
+    Synth-->>Worker: Structured report
+    Worker->>Store: Mark Completed or Failed
 
-    Client->>API: GET /api/v1/research-jobs/{jobId}
-    API->>Store: read status
-    API-->>Client: status payload
+    UI->>API: Poll status
+    API->>Store: Read status and trace
+    API-->>UI: Status payload
 
-    Client->>API: GET /api/v1/research-jobs/{jobId}/result
-    API->>Store: read result
-    API-->>Client: 202, 200, or 409
+    UI->>API: Get final result
+    API->>Store: Read completed result
+    API-->>UI: Completed report
+
+    Client->>Chat: Ask follow-up question
+    Chat->>Store: Load completed report snapshot
+    Chat-->>Client: Grounded streamed answer
 ```
