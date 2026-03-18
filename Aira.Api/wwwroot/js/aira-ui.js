@@ -6,6 +6,7 @@
         "What are the main risks in this report?",
         "Which sources matter most here?"
     ];
+    const appBaseHref = getAppBaseHref();
 
     document.addEventListener("DOMContentLoaded", () => {
         initHomePage();
@@ -35,7 +36,7 @@
 
             searchHandle = window.setTimeout(async () => {
                 try {
-                    const response = await fetch(`/api/v1/tickers/search?q=${encodeURIComponent(query)}&limit=8`, {
+                    const response = await fetch(resolveAppUrl(`api/v1/tickers/search?q=${encodeURIComponent(query)}&limit=8`), {
                         headers: { "Accept": "application/json" }
                     });
 
@@ -74,7 +75,7 @@
             messageElement.textContent = "Starting report...";
 
             try {
-                const response = await fetch("/api/v1/research-jobs", {
+                const response = await fetch(resolveAppUrl("api/v1/research-jobs"), {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({ identifier, researchMode: researchModeInput ? researchModeInput.value : "Standard" })
@@ -87,7 +88,7 @@
                 }
 
                 const payload = await response.json();
-                window.location.assign(`/reports/${payload.jobId}`);
+                window.location.assign(resolveAppUrl(`reports/${payload.jobId}`));
             } catch (error) {
                 messageElement.textContent = error instanceof Error ? error.message : "Failed to start the report.";
             } finally {
@@ -213,7 +214,7 @@
 
     async function pollStatus(state, elements) {
         try {
-            const response = await fetch(`/api/v1/research-jobs/${state.jobId}`, {
+            const response = await fetch(resolveAppUrl(`api/v1/research-jobs/${state.jobId}`), {
                 headers: { "Accept": "application/json" }
             });
 
@@ -255,7 +256,7 @@
             return;
         }
 
-        const response = await fetch(`/api/v1/research-jobs/${state.jobId}/result`, {
+        const response = await fetch(resolveAppUrl(`api/v1/research-jobs/${state.jobId}/result`), {
             headers: { "Accept": "application/json" }
         });
 
@@ -596,7 +597,7 @@
             }
 
             state.connection = new window.signalR.HubConnectionBuilder()
-                .withUrl("/hubs/report-chat")
+                .withUrl(resolveAppUrl("hubs/report-chat"))
                 .withAutomaticReconnect()
                 .build();
 
@@ -948,6 +949,15 @@
         }
 
         return "The chat request failed.";
+    }
+
+    function getAppBaseHref() {
+        const baseElement = document.querySelector("base");
+        return baseElement?.href || `${window.location.origin}/`;
+    }
+
+    function resolveAppUrl(path) {
+        return new URL(String(path || "").replace(/^\/+/, ""), appBaseHref).toString();
     }
 
     function escapeHtml(value) {
