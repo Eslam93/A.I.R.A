@@ -1039,8 +1039,8 @@ Current validation status from the latest full pass on .NET 10:
 
 - `dotnet build Aira.sln` passed
 - `dotnet test Aira.sln` passed
-- 47 tests total
-  - 31 unit
+- 77 tests total
+  - 61 unit
   - 16 integration
 
 The test suite covers:
@@ -1050,6 +1050,7 @@ The test suite covers:
 - state transitions
 - deterministic scoring rules
 - live-provider hybrid behavior
+- SEC XBRL fact selection, against real company facts for 14 companies (see `Aira.Tests.Unit/Fixtures/Sec`)
 - JSON `null` provider payloads
 - Responses API stream parsing
 - report synthesis validation and repair mapping
@@ -1080,6 +1081,7 @@ The test suite covers:
 - There is no user cancel API for research jobs.
 - There is no distributed worker architecture.
 - Live analysis depends on external APIs and may degrade or fail when providers are slow, unavailable, or rate-limited.
+- Live financial statements need the standard US GAAP concepts for every figure in the same fiscal year. Companies that don't report `OperatingIncomeLoss` (banks, oil majors, and many pharmaceutical companies) or that tag capital expenditure or debt with their own concepts fall back with a reason naming the missing figure. Debt can still be understated when a company splits its current debt across several concepts.
 - Mock mode uses a finite seeded catalog.
 - Recurring monitoring is intentionally deferred.
 - Autonomous mode is bounded to approved internal tools and does not browse the open web.

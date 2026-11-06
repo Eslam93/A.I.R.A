@@ -21,6 +21,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <None Include="Fixtures\**\*.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\Aira.Domain\Aira.Domain.csproj" />
     <ProjectReference Include="..\Aira.Application\Aira.Application.csproj" />
     <ProjectReference Include="..\Aira.Infrastructure\Aira.Infrastructure.csproj" />

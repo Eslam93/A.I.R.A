@@ -1,3 +1,6 @@
+using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
+using System.Text.Json;
 using Aira.Domain.Contracts;
 using Aira.Domain.Enums;
 using Aira.Domain.Models;
@@ -7,12 +10,12 @@ using Microsoft.Extensions.Logging;
 using Aira.Application.Abstractions;
 using Aira.Application.Models;
 using Aira.Application.Services;
-using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Aira.Infrastructure.Providers;
 
 public sealed class HybridFinancialStatementProvider : IFinancialStatementProvider
 {
+    // Revenue comes from whichever concept is still being reported; list order only breaks ties.
     private static readonly string[] RevenueConcepts =
     [
         "Revenues",
@@ -20,6 +23,7 @@ public sealed class HybridFinancialStatementProvider : IFinancialStatementProvid
         "SalesRevenueNet"
     ];
 
+    // For every other figure, the first concept that reports the revenue's fiscal year is used.
     private static readonly string[] OperatingIncomeConcepts =
     [
         "OperatingIncomeLoss"
@@ -31,11 +35,12 @@ public sealed class HybridFinancialStatementProvider : IFinancialStatementProvid
         "NetCashProvidedByUsedInOperatingActivitiesContinuingOperations"
     ];
 
+    // Cash paid for capital expenditure. PropertyPlantAndEquipmentAdditions and
+    // CapitalExpendituresIncurredButNotYetPaid are left out on purpose: both include non-cash additions.
     private static readonly string[] CapitalExpenditureConcepts =
     [
         "PaymentsToAcquirePropertyPlantAndEquipment",
-        "PropertyPlantAndEquipmentAdditions",
-        "CapitalExpendituresIncurredButNotYetPaid"
+        "PaymentsToAcquireProductiveAssets"
     ];
 
     private static readonly string[] CashConcepts =
@@ -44,31 +49,39 @@ public sealed class HybridFinancialStatementProvider : IFinancialStatementProvid
         "CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents"
     ];
 
+    // Most to least inclusive. LongTermDebt can leave out commercial paper and short-term borrowings.
     private static readonly string[] TotalDebtConcepts =
     [
-        "LongTermDebtAndCapitalLeaseObligations",
-        "LongTermDebtAndFinanceLeaseObligations",
+        "DebtLongtermAndShorttermCombinedAmount",
         "LongTermDebtAndCapitalLeaseObligationsIncludingCurrentMaturities",
+        "DebtAndCapitalLeaseObligations",
         "LongTermDebt"
     ];
 
+    // DebtCurrent is the whole current part (current maturities plus commercial paper and other short-term debt).
     private static readonly string[] CurrentDebtConcepts =
     [
+        "DebtCurrent",
         "LongTermDebtCurrent",
         "ShortTermBorrowings",
         "LongTermDebtAndCapitalLeaseObligationsCurrent"
     ];
 
+    // Despite its name, LongTermDebtAndCapitalLeaseObligations is the non-current amount only.
     private static readonly string[] NonCurrentDebtConcepts =
     [
         "LongTermDebtNoncurrent",
-        "LongTermDebtAndCapitalLeaseObligationsNoncurrent",
-        "LongTermDebtAndFinanceLeaseObligationsNoncurrent"
+        "LongTermDebtAndCapitalLeaseObligations"
     ];
+
+    // A company's next 10-K is due within about three months of its fiscal year end, so a latest fiscal year more than
+    // 18 months old means the company stopped filing or the facts are incomplete.
+    private const int MaxFiscalYearAgeMonths = 18;
 
     private readonly MockFinancialStatementProvider _mockProvider;
     private readonly IJobExecutionContextAccessor _jobExecutionContextAccessor;
     private readonly SecEdgarClient _secEdgarClient;
+    private readonly TimeProvider _timeProvider;
     private readonly ILogger<HybridFinancialStatementProvider> _logger;
 
     [ActivatorUtilitiesConstructor]
@@ -76,19 +89,22 @@ public sealed class HybridFinancialStatementProvider : IFinancialStatementProvid
         MockFinancialStatementProvider mockProvider,
         IJobExecutionContextAccessor jobExecutionContextAccessor,
         SecEdgarClient secEdgarClient,
+        TimeProvider timeProvider,
         ILogger<HybridFinancialStatementProvider> logger)
     {
         _mockProvider = mockProvider;
         _jobExecutionContextAccessor = jobExecutionContextAccessor;
         _secEdgarClient = secEdgarClient;
+        _timeProvider = timeProvider;
         _logger = logger;
     }
 
     public HybridFinancialStatementProvider(
         MockFinancialStatementProvider mockProvider,
         SecEdgarClient secEdgarClient,
+        TimeProvider timeProvider,
         ILogger<HybridFinancialStatementProvider> logger)
-        : this(mockProvider, CreateHybridContextAccessor(), secEdgarClient, logger)
+        : this(mockProvider, CreateHybridContextAccessor(), secEdgarClient, timeProvider, logger)
     {
     }
 
@@ -118,12 +134,23 @@ public sealed class HybridFinancialStatementProvider : IFinancialStatementProvid
         try
         {
             var companyFacts = await _secEdgarClient.GetCompanyFactsAsync(identifier, cancellationToken);
-            if (companyFacts is null ||
-                !TryBuildLiveStatement(identifier, companyFacts, out var statement))
+            string? unavailableReason;
+            FinancialStatement? statement = null;
+            if (companyFacts is null)
             {
+                unavailableReason = "no company facts were found";
+            }
+            else
+            {
+                TryBuildLiveStatement(identifier, companyFacts, _timeProvider.GetUtcNow(), out statement, out unavailableReason);
+            }
+
+            if (statement is null)
+            {
+                _logger.LogInformation("SEC EDGAR financial facts for {Identifier} were incomplete: {Reason}.", identifier, unavailableReason);
                 return mode == ResearchExecutionMode.LiveRequired
-                    ? ProviderResult<FinancialStatement>.Empty(errorMessage: "SEC EDGAR did not return enough financial facts.", origin: ProviderOrigin.Live, providerName: "SEC EDGAR")
-                    : ToMockFallback(fallback, "SEC EDGAR did not return enough financial facts, so the seeded mock statements were used.");
+                    ? ProviderResult<FinancialStatement>.Empty(errorMessage: $"SEC EDGAR financial facts were incomplete: {unavailableReason}.", origin: ProviderOrigin.Live, providerName: "SEC EDGAR")
+                    : ToMockFallback(fallback, $"SEC EDGAR financial facts were incomplete ({unavailableReason}), so the seeded mock statements were used.");
             }
 
             return ProviderResult<FinancialStatement>.Success(statement, ProviderOrigin.Live, "SEC EDGAR");
@@ -148,40 +175,82 @@ public sealed class HybridFinancialStatementProvider : IFinancialStatementProvid
     private static bool TryBuildLiveStatement(
         string identifier,
         SecCompanyFactsData companyFacts,
-        out FinancialStatement financialStatement)
+        DateTimeOffset now,
+        [NotNullWhen(true)] out FinancialStatement? financialStatement,
+        [NotNullWhen(false)] out string? unavailableReason)
     {
-        financialStatement = null!;
+        financialStatement = null;
+        var facts = companyFacts.CompanyFactsRoot;
 
-        if (!SecEdgarClient.TryGetLatestTwoAnnualFacts(companyFacts.CompanyFactsRoot, RevenueConcepts, ["USD"], out var latestRevenue, out var previousRevenue) ||
-            !SecEdgarClient.TryGetLatestAnnualFact(companyFacts.CompanyFactsRoot, OperatingIncomeConcepts, ["USD"], out var latestOperatingIncome) ||
-            !SecEdgarClient.TryGetLatestAnnualFact(companyFacts.CompanyFactsRoot, CashFromOperationsConcepts, ["USD"], out var latestOperatingCashFlow) ||
-            !SecEdgarClient.TryGetLatestAnnualFact(companyFacts.CompanyFactsRoot, CapitalExpenditureConcepts, ["USD"], out var latestCapitalExpenditure) ||
-            !SecEdgarClient.TryGetLatestInstantFact(companyFacts.CompanyFactsRoot, CashConcepts, ["USD"], out var latestCash))
+        if (!SecFactSelector.TryGetLatestFiscalYearPair(facts, RevenueConcepts, SecFactSelector.Usd, out var revenue, out var previousRevenue))
         {
+            unavailableReason = "no two consecutive fiscal years of us-gaap revenue in USD";
             return false;
         }
 
-        var hasDebt = SecEdgarClient.TryGetLatestInstantFact(companyFacts.CompanyFactsRoot, TotalDebtConcepts, ["USD"], out var latestDebt);
-        if (!hasDebt &&
-            SecEdgarClient.TryGetLatestInstantFact(companyFacts.CompanyFactsRoot, CurrentDebtConcepts, ["USD"], out var currentDebt) &&
-            SecEdgarClient.TryGetLatestInstantFact(companyFacts.CompanyFactsRoot, NonCurrentDebtConcepts, ["USD"], out var nonCurrentDebt))
+        var fiscalYearEnd = revenue.EndDate;
+        var fiscalYearEndText = FormatDate(fiscalYearEnd);
+
+        // When another figure already has a newer fiscal year, the newest revenue is tagged with a concept this provider
+        // does not read, and the statement would silently describe the previous year.
+        if (SecFactSelector.TryGetFiscalYearAfter(
+                facts,
+                [.. OperatingIncomeConcepts, .. CashFromOperationsConcepts, .. CapitalExpenditureConcepts],
+                SecFactSelector.Usd,
+                fiscalYearEnd,
+                out var newerFiscalYearEnd))
         {
-            latestDebt = currentDebt with { Value = currentDebt.Value + nonCurrentDebt.Value };
-            hasDebt = true;
+            unavailableReason = $"no revenue for the fiscal year ending {FormatDate(newerFiscalYearEnd)}; the newest revenue on file is for {fiscalYearEndText}";
+            return false;
         }
 
-        if (!hasDebt || latestRevenue.Value == 0m)
+        var staleCutoff = now.AddMonths(-MaxFiscalYearAgeMonths);
+        if (fiscalYearEnd <= staleCutoff)
         {
+            unavailableReason = $"the latest fiscal year ended on {fiscalYearEndText}, more than {MaxFiscalYearAgeMonths} months ago";
+            return false;
+        }
+
+        if (revenue.Value == 0m)
+        {
+            unavailableReason = $"revenue for the fiscal year ending {fiscalYearEndText} is zero";
+            return false;
+        }
+
+        // Every other figure has to describe the same fiscal year as revenue.
+        var missing = new List<string>();
+        var operatingIncome = SecFactSelector.TryGetFiscalYearFact(facts, OperatingIncomeConcepts, SecFactSelector.Usd, fiscalYearEnd, out var operatingIncomeFact)
+            ? operatingIncomeFact
+            : Missing("operating income");
+        var operatingCashFlow = SecFactSelector.TryGetFiscalYearFact(facts, CashFromOperationsConcepts, SecFactSelector.Usd, fiscalYearEnd, out var operatingCashFlowFact)
+            ? operatingCashFlowFact
+            : Missing("operating cash flow");
+        var capitalExpenditure = SecFactSelector.TryGetFiscalYearFact(facts, CapitalExpenditureConcepts, SecFactSelector.Usd, fiscalYearEnd, out var capitalExpenditureFact)
+            ? capitalExpenditureFact
+            : Missing("capital expenditure");
+        // Balances come from annual reports first, so later 10-Qs that re-tag the year-end column cannot change them.
+        var cash = SecFactSelector.TryGetInstantFact(facts, CashConcepts, SecFactSelector.Usd, fiscalYearEnd, annualReportsOnly: true, out var cashFact) ||
+            SecFactSelector.TryGetInstantFact(facts, CashConcepts, SecFactSelector.Usd, fiscalYearEnd, annualReportsOnly: false, out cashFact)
+            ? cashFact
+            : Missing("cash");
+        var debt = TryGetDebt(facts, fiscalYearEnd, annualReportsOnly: true, out var debtFact) ||
+            TryGetDebt(facts, fiscalYearEnd, annualReportsOnly: false, out debtFact)
+            ? debtFact
+            : Missing("debt");
+
+        if (operatingIncome is null || operatingCashFlow is null || capitalExpenditure is null || cash is null || debt is null)
+        {
+            unavailableReason = $"no {string.Join(", ", missing)} for the fiscal year ending {fiscalYearEndText}";
             return false;
         }
 
         var revenueGrowthPercent = previousRevenue.Value == 0m
             ? 0m
-            : ((latestRevenue.Value - previousRevenue.Value) / Math.Abs(previousRevenue.Value)) * 100m;
-        var operatingMarginPercent = (latestOperatingIncome.Value / latestRevenue.Value) * 100m;
-        var freeCashFlowBillions = (latestOperatingCashFlow.Value - latestCapitalExpenditure.Value) / 1_000_000_000m;
-        var cashBillions = latestCash.Value / 1_000_000_000m;
-        var debtBillions = latestDebt.Value / 1_000_000_000m;
+            : ((revenue.Value - previousRevenue.Value) / Math.Abs(previousRevenue.Value)) * 100m;
+        var operatingMarginPercent = (operatingIncome.Value / revenue.Value) * 100m;
+        var freeCashFlowBillions = (operatingCashFlow.Value - capitalExpenditure.Value) / 1_000_000_000m;
+        var cashBillions = cash.Value / 1_000_000_000m;
+        var debtBillions = debt.Value / 1_000_000_000m;
 
         var growthSignal = Clamp(revenueGrowthPercent / 20m, -1m, 1m);
         var marginSignal = Clamp((operatingMarginPercent - 10m) / 20m, -1m, 1m);
@@ -191,7 +260,7 @@ public sealed class HybridFinancialStatementProvider : IFinancialStatementProvid
         var qualityScore = Math.Round(
             Clamp(
                 0.70m +
-                (latestRevenue.EndDate > DateTimeOffset.UtcNow.AddMonths(-18) ? 0.10m : 0m) +
+                (fiscalYearEnd > staleCutoff ? 0.10m : 0m) +
                 (Math.Abs(revenueGrowthPercent) > 0m ? 0.05m : 0m),
                 0.60m,
                 0.90m),
@@ -221,12 +290,44 @@ public sealed class HybridFinancialStatementProvider : IFinancialStatementProvid
             efficiencySummary,
             balanceSheetSummary,
             $"{companyFacts.CompanyName} financial statements",
-            latestRevenue.EndDate,
+            fiscalYearEnd,
             TimestampType.AsOf,
             qualityScore,
             stanceScore);
+        unavailableReason = null;
         return true;
+
+        SecFactPoint? Missing(string figure)
+        {
+            missing.Add(figure);
+            return null;
+        }
     }
+
+    // Total debt at the fiscal year end. A reported total can still leave out current maturities or commercial paper,
+    // so it is compared with the non-current part plus the current part, and the larger figure is used.
+    private static bool TryGetDebt(
+        JsonElement facts,
+        DateTimeOffset fiscalYearEnd,
+        bool annualReportsOnly,
+        [NotNullWhen(true)] out SecFactPoint? debt)
+    {
+        SecFactSelector.TryGetInstantFact(facts, TotalDebtConcepts, SecFactSelector.Usd, fiscalYearEnd, annualReportsOnly, out var total);
+
+        SecFactPoint? parts = null;
+        if (SecFactSelector.TryGetInstantFact(facts, NonCurrentDebtConcepts, SecFactSelector.Usd, fiscalYearEnd, annualReportsOnly, out var nonCurrent))
+        {
+            parts = SecFactSelector.TryGetInstantFact(facts, CurrentDebtConcepts, SecFactSelector.Usd, fiscalYearEnd, annualReportsOnly, out var current)
+                ? nonCurrent with { Concept = $"{nonCurrent.Concept}+{current.Concept}", Value = nonCurrent.Value + current.Value }
+                : nonCurrent;
+        }
+
+        debt = total is null || (parts is not null && parts.Value > total.Value) ? parts : total;
+        return debt is not null;
+    }
+
+    private static string FormatDate(DateTimeOffset date) =>
+        date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
 
     private static decimal Clamp(decimal value, decimal minimum, decimal maximum) =>
         Math.Min(Math.Max(value, minimum), maximum);
