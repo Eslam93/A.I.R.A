@@ -1,0 +1,8 @@
+<Solution>
+  <Project Path="Proofsheet.Api/Proofsheet.Api.csproj" />
+  <Project Path="Proofsheet.Application/Proofsheet.Application.csproj" />
+  <Project Path="Proofsheet.Domain/Proofsheet.Domain.csproj" />
+  <Project Path="Proofsheet.Infrastructure/Proofsheet.Infrastructure.csproj" />
+  <Project Path="Proofsheet.Tests.Integration/Proofsheet.Tests.Integration.csproj" />
+  <Project Path="Proofsheet.Tests.Unit/Proofsheet.Tests.Unit.csproj" />
+</Solution>

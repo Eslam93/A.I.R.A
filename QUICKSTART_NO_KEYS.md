@@ -1,6 +1,6 @@
-# A.I.R.A Quickstart Without API Keys
+# Proofsheet Quickstart Without API Keys
 
-This guide is for someone who just cloned the repository and wants to run A.I.R.A locally without configuring any API keys.
+This guide is for someone who just cloned the repository and wants to run Proofsheet locally without configuring any API keys.
 
 The important default behavior is:
 
@@ -26,11 +26,11 @@ Optional but useful:
 ## 1. Clone the Repository
 
 ```bash
-git clone <your-repo-url>
-cd A.I.R.A
+git clone <your-repo-url> proofsheet
+cd proofsheet
 ```
 
-If the repo name on disk is different, use that folder name instead.
+The last argument of `git clone` sets the folder name. If you cloned without it, `cd` into the folder git created instead.
 
 ## 2. Confirm the Default No-Key Behavior
 
@@ -56,8 +56,8 @@ From the repository root:
 
 ```bash
 dotnet restore
-dotnet build Aira.sln
-dotnet run --project Aira.Api --launch-profile http
+dotnet build Proofsheet.slnx
+dotnet run --project Proofsheet.Api --launch-profile http
 ```
 
 Why `--launch-profile http`:
@@ -168,7 +168,7 @@ curl http://localhost:5214/api/v1/research-jobs/<jobId>/result
 From the repository root:
 
 ```bash
-dotnet test Aira.sln
+dotnet test Proofsheet.slnx
 ```
 
 This validates the no-key default path too, because the test suite runs with mock-oriented defaults unless a test explicitly overrides configuration.
@@ -178,7 +178,7 @@ This validates the no-key default path too, because the test suite runs with moc
 If you are evaluating the project quickly, this is the simplest path:
 
 1. clone the repo
-2. run `dotnet run --project Aira.Api --launch-profile http`
+2. run `dotnet run --project Proofsheet.Api --launch-profile http`
 3. open `http://localhost:5214/`
 4. choose `Standard`
 5. generate a report for `AAPL`
@@ -193,14 +193,14 @@ That is the intended no-key demo path.
 Run with a different URL:
 
 ```bash
-ASPNETCORE_URLS=http://localhost:5087 dotnet run --project Aira.Api --no-launch-profile
+ASPNETCORE_URLS=http://localhost:5087 dotnet run --project Proofsheet.Api --no-launch-profile
 ```
 
 On PowerShell:
 
 ```powershell
 $env:ASPNETCORE_URLS = "http://localhost:5087"
-dotnet run --project Aira.Api --no-launch-profile
+dotnet run --project Proofsheet.Api --no-launch-profile
 ```
 
 ### Build issues

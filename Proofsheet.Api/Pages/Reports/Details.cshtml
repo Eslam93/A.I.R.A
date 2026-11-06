@@ -1,0 +1,137 @@
+@page "/reports/{jobId:guid}"
+@model Proofsheet.Api.Pages.Reports.DetailsModel
+@{
+    ViewData["Title"] = "Report";
+}
+
+<section id="report-page" class="report-page" data-job-id="@Model.JobId" data-chat-enabled="@Model.IsReportChatConfigured.ToString().ToLowerInvariant()" data-chat-unavailable-reason="@Model.ReportChatUnavailableReason">
+    <div class="report-page__header">
+        <div class="report-page__identity">
+            <h1 id="report-company">Preparing report</h1>
+        </div>
+
+        <div class="report-page__actions">
+            <span id="status-badge" class="status-badge status-badge--queued">Queued</span>
+            <button id="progress-toggle" class="ghost-button" type="button" aria-expanded="false" aria-controls="progress-panel">Show Progress</button>
+        </div>
+    </div>
+
+    <div class="report-main">
+        <section class="surface-card surface-card--hero">
+            <div id="report-content" class="report-content" hidden>
+                <div class="report-overview">
+                    <article id="signal-card" class="metric-card metric-card--signal">
+                        <span class="metric-card__label">Signal</span>
+                        <strong id="report-signal"></strong>
+                    </article>
+                    <article id="confidence-card" class="metric-card metric-card--confidence">
+                        <span class="metric-card__label">Confidence</span>
+                        <strong id="report-confidence"></strong>
+                    </article>
+                </div>
+
+                <article class="report-section">
+                    <h3>Thesis</h3>
+                    <p id="report-thesis"></p>
+                </article>
+
+                <article class="report-section">
+                    <h3>Signal Logic</h3>
+                    <p id="report-signal-rationale"></p>
+                </article>
+
+                <article class="report-section">
+                    <h3>Confidence</h3>
+                    <p id="report-confidence-rationale"></p>
+                    <small id="report-confidence-bounds" class="report-section__subtle"></small>
+                </article>
+
+                <article class="report-section">
+                    <h3>Synthesis</h3>
+                    <p id="report-synthesis"></p>
+                </article>
+
+                <article class="report-section">
+                    <h3>Insights</h3>
+                    <ul id="report-insights" class="report-list"></ul>
+                </article>
+
+                <article class="report-section">
+                    <h3>Sources</h3>
+                    <ul id="report-sources" class="source-list"></ul>
+                </article>
+
+                <article class="report-section">
+                    <h3>Provider Usage</h3>
+                    <ul id="report-provider-usage" class="provider-usage-list"></ul>
+                </article>
+            </div>
+
+            <div id="report-placeholder" class="report-placeholder">
+                <p class="report-placeholder__status">Running report</p>
+                <h2>We are building the report.</h2>
+                <p id="progress-caption">Track the live steps from the Progress panel.</p>
+                <div class="inline-progress" aria-label="Report generation progress">
+                    <div class="inline-progress__meta">
+                        <span id="progress-step-label">Queued</span>
+                        <span id="progress-percent">0%</span>
+                    </div>
+                    <div class="inline-progress__track">
+                        <div id="progress-fill" class="inline-progress__fill" style="width:0%"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="failure-panel" class="failure-panel" hidden>
+                <h3>Job failed</h3>
+                <p id="failure-message"></p>
+            </div>
+        </section>
+
+        <section class="surface-card chat-card">
+            <div class="surface-card__header surface-card__header--compact surface-card__header--centered">
+                <div>
+                    <h2>Chat with the Report</h2>
+                    <p>Ask me anything about this report.</p>
+                </div>
+            </div>
+
+            @if (!Model.IsReportChatConfigured)
+            {
+                <p class="form-message">Report chat is unavailable until <code>OpenAiResponses</code> is configured.</p>
+            }
+
+            <div id="chat-panel" class="chat-panel">
+                <div id="chat-empty-state" class="chat-empty-state">
+                    <p id="chat-welcome" class="chat-empty-state__title">Loading chat...</p>
+                    <p class="chat-empty-state__copy">Start with one of these:</p>
+                    <div id="chat-suggestions" class="chat-suggestions" role="list"></div>
+                </div>
+
+                <div id="chat-transcript" class="chat-transcript" aria-live="polite"></div>
+
+                <form id="chat-form" class="chat-form">
+                    <textarea id="chat-message" class="chat-input" placeholder="Ask me anything." rows="3" disabled></textarea>
+                    <div class="chat-actions">
+                        <button id="chat-send" class="primary-button primary-button--icon" type="submit">Send <span aria-hidden="true">↗</span></button>
+                    </div>
+                    <p id="chat-status" class="form-message" aria-live="polite"></p>
+                </form>
+            </div>
+        </section>
+    </div>
+
+    <div id="progress-backdrop" class="progress-backdrop" hidden></div>
+    <aside id="progress-panel" class="progress-panel" aria-hidden="true">
+        <div class="progress-panel__header">
+            <div>
+                <p class="eyebrow">Live progress</p>
+                <h2>Timeline</h2>
+                <p class="progress-panel__meta">Job @Model.JobId</p>
+            </div>
+            <button id="progress-close" class="ghost-button ghost-button--icon" type="button" aria-label="Close progress panel">Close</button>
+        </div>
+        <ul id="warnings-list" class="warning-list"></ul>
+        <ol id="progress-trace" class="trace-list"></ol>
+    </aside>
+</section>

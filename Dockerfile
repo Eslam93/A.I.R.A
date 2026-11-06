@@ -1,17 +1,17 @@
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 
-COPY Aira.sln global.json ./
-COPY Aira.Api/Aira.Api.csproj Aira.Api/
-COPY Aira.Application/Aira.Application.csproj Aira.Application/
-COPY Aira.Domain/Aira.Domain.csproj Aira.Domain/
-COPY Aira.Infrastructure/Aira.Infrastructure.csproj Aira.Infrastructure/
-COPY Aira.Tests.Unit/Aira.Tests.Unit.csproj Aira.Tests.Unit/
-COPY Aira.Tests.Integration/Aira.Tests.Integration.csproj Aira.Tests.Integration/
-RUN dotnet restore Aira.sln
+COPY Proofsheet.slnx global.json ./
+COPY Proofsheet.Api/Proofsheet.Api.csproj Proofsheet.Api/
+COPY Proofsheet.Application/Proofsheet.Application.csproj Proofsheet.Application/
+COPY Proofsheet.Domain/Proofsheet.Domain.csproj Proofsheet.Domain/
+COPY Proofsheet.Infrastructure/Proofsheet.Infrastructure.csproj Proofsheet.Infrastructure/
+COPY Proofsheet.Tests.Unit/Proofsheet.Tests.Unit.csproj Proofsheet.Tests.Unit/
+COPY Proofsheet.Tests.Integration/Proofsheet.Tests.Integration.csproj Proofsheet.Tests.Integration/
+RUN dotnet restore Proofsheet.slnx
 
 COPY . .
-RUN dotnet publish Aira.Api/Aira.Api.csproj -c Release -o /app/publish /p:UseAppHost=false
+RUN dotnet publish Proofsheet.Api/Proofsheet.Api.csproj -c Release -o /app/publish /p:UseAppHost=false
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
 WORKDIR /app
@@ -19,4 +19,4 @@ EXPOSE 8080
 
 COPY --from=build /app/publish .
 USER $APP_UID
-ENTRYPOINT ["dotnet", "Aira.Api.dll"]
+ENTRYPOINT ["dotnet", "Proofsheet.Api.dll"]

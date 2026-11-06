@@ -1,6 +1,6 @@
 # A.I.R.A Case Study Coverage
 
-This document compares the original case study requirements against the current implementation in this repository.
+Proofsheet started as an implementation of the A.I.R.A case study. This document compares the original case study requirements against the current implementation in this repository.
 
 It is intended to answer four questions clearly:
 
@@ -182,7 +182,7 @@ These items were not required by the original case study, but were added because
 
 Added:
 
-- Razor Pages UI inside `Aira.Api`
+- Razor Pages UI inside `Proofsheet.Api`
 - search and submit flow
 - live progress display with polling
 - report page
@@ -296,8 +296,8 @@ Status: covered.
 
 Current verification:
 
-- `dotnet build Aira.sln`
-- `dotnet test Aira.sln`
+- `dotnet build Proofsheet.slnx`
+- `dotnet test Proofsheet.slnx`
 - passing tests on .NET 10:
   - 61 unit
   - 16 integration
@@ -398,4 +398,4 @@ Against the original case study brief, the implementation is:
 
 If reduced to a single sentence:
 
-This repository now represents a strong, submission-ready A.I.R.A implementation with both a stable production-style pipeline and an advanced autonomous research mode, while intentionally deferring recurring monitoring and durability to a later phase.
+This repository now represents a strong, submission-ready implementation of the A.I.R.A case study with both a stable production-style pipeline and an advanced autonomous research mode, while intentionally deferring recurring monitoring and durability to a later phase.
