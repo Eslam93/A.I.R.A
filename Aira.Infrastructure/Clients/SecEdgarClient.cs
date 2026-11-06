@@ -11,7 +11,6 @@ namespace Aira.Infrastructure.Clients;
 public sealed class SecEdgarClient
 {
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
-    private static readonly string[] AnnualForms = ["10-K", "10-K/A", "10-KT", "20-F", "20-F/A", "40-F", "40-F/A"];
 
     private readonly HttpClient _httpClient;
     private readonly SecEdgarOptions _options;
@@ -147,75 +146,6 @@ public sealed class SecEdgarClient
             .Take(Math.Clamp(limit, 1, 20))
             .Select(item => item.Profile)
             .ToArray();
-    }
-
-    public static bool TryGetLatestAnnualFact(
-        JsonElement companyFactsRoot,
-        IReadOnlyList<string> conceptNames,
-        IReadOnlyList<string> preferredUnits,
-        out SecFactPoint factPoint)
-    {
-        factPoint = EmptyFactPoint();
-        var facts = GetFactPoints(companyFactsRoot, conceptNames, preferredUnits);
-        SecFactPoint? annual = FilterAnnualFacts(facts)
-            .OrderByDescending(item => item.EndDate)
-            .ThenByDescending(item => item.FiledDate)
-            .FirstOrDefault();
-
-        if (annual is null)
-        {
-            return false;
-        }
-
-        factPoint = annual;
-        return true;
-    }
-
-    public static bool TryGetLatestTwoAnnualFacts(
-        JsonElement companyFactsRoot,
-        IReadOnlyList<string> conceptNames,
-        IReadOnlyList<string> preferredUnits,
-        out SecFactPoint latest,
-        out SecFactPoint previous)
-    {
-        latest = EmptyFactPoint();
-        previous = EmptyFactPoint();
-        var annualFacts = FilterAnnualFacts(GetFactPoints(companyFactsRoot, conceptNames, preferredUnits))
-            .OrderByDescending(item => item.EndDate)
-            .ThenByDescending(item => item.FiledDate)
-            .Take(2)
-            .ToArray();
-
-        if (annualFacts.Length < 2)
-        {
-            return false;
-        }
-
-        latest = annualFacts[0];
-        previous = annualFacts[1];
-        return true;
-    }
-
-    public static bool TryGetLatestInstantFact(
-        JsonElement companyFactsRoot,
-        IReadOnlyList<string> conceptNames,
-        IReadOnlyList<string> preferredUnits,
-        out SecFactPoint factPoint)
-    {
-        factPoint = EmptyFactPoint();
-        var facts = GetFactPoints(companyFactsRoot, conceptNames, preferredUnits)
-            .Where(item => item.EndDate != default)
-            .OrderByDescending(item => item.EndDate)
-            .ThenByDescending(item => item.FiledDate)
-            .ToArray();
-
-        if (facts.Length == 0)
-        {
-            return false;
-        }
-
-        factPoint = facts[0];
-        return true;
     }
 
     private async Task<IReadOnlyDictionary<string, SecTickerProfile>> LoadTickerMapAsync(CancellationToken cancellationToken)
@@ -404,101 +334,6 @@ public sealed class SecEdgarClient
             .ToArray();
     }
 
-    private static IReadOnlyList<SecFactPoint> GetFactPoints(
-        JsonElement companyFactsRoot,
-        IReadOnlyList<string> conceptNames,
-        IReadOnlyList<string> preferredUnits)
-    {
-        if (!companyFactsRoot.TryGetProperty("facts", out var factsElement))
-        {
-            return Array.Empty<SecFactPoint>();
-        }
-
-        foreach (var taxonomyName in new[] { "us-gaap", "ifrs-full" })
-        {
-            if (!factsElement.TryGetProperty(taxonomyName, out var taxonomyElement))
-            {
-                continue;
-            }
-
-            foreach (var conceptName in conceptNames)
-            {
-                if (!taxonomyElement.TryGetProperty(conceptName, out var conceptElement) ||
-                    !conceptElement.TryGetProperty("units", out var unitsElement))
-                {
-                    continue;
-                }
-
-                foreach (var preferredUnit in preferredUnits)
-                {
-                    if (unitsElement.TryGetProperty(preferredUnit, out var unitElement))
-                    {
-                        return ParseFactPoints(unitElement);
-                    }
-                }
-
-                foreach (var unitProperty in unitsElement.EnumerateObject())
-                {
-                    return ParseFactPoints(unitProperty.Value);
-                }
-            }
-        }
-
-        return Array.Empty<SecFactPoint>();
-    }
-
-    private static IReadOnlyList<SecFactPoint> ParseFactPoints(JsonElement unitElement)
-    {
-        if (unitElement.ValueKind != JsonValueKind.Array)
-        {
-            return Array.Empty<SecFactPoint>();
-        }
-
-        var points = new List<SecFactPoint>();
-        foreach (var item in unitElement.EnumerateArray())
-        {
-            if (!TryGetDecimal(item, "val", out var value))
-            {
-                continue;
-            }
-
-            var form = TryGetString(item, "form");
-            var frame = TryGetString(item, "frame");
-            var fiscalPeriod = TryGetString(item, "fp");
-            var startDate = TryGetDate(item, "start");
-            var endDate = TryGetDate(item, "end");
-            var filedDate = TryGetDate(item, "filed");
-            points.Add(new SecFactPoint(value, form, frame, fiscalPeriod, startDate, endDate, filedDate));
-        }
-
-        return points;
-    }
-
-    private static IEnumerable<SecFactPoint> FilterAnnualFacts(IEnumerable<SecFactPoint> facts) =>
-        facts.Where(item =>
-        {
-            if (!string.IsNullOrWhiteSpace(item.FiscalPeriod) &&
-                item.FiscalPeriod.Equals("FY", StringComparison.OrdinalIgnoreCase))
-            {
-                return true;
-            }
-
-            if (!string.IsNullOrWhiteSpace(item.Form) &&
-                AnnualForms.Contains(item.Form, StringComparer.OrdinalIgnoreCase))
-            {
-                return true;
-            }
-
-            if (item.StartDate is not null &&
-                item.EndDate != default &&
-                (item.EndDate - item.StartDate.Value).TotalDays >= 300)
-            {
-                return true;
-            }
-
-            return false;
-        });
-
     private static JsonElement[] GetArray(JsonElement element, string propertyName) =>
         element.TryGetProperty(propertyName, out var property) && property.ValueKind == JsonValueKind.Array
             ? property.EnumerateArray().ToArray()
@@ -533,39 +368,6 @@ public sealed class SecEdgarClient
                 .Select(value => value!)
                 .ToArray()
             : [];
-
-    private static bool TryGetDecimal(JsonElement element, string propertyName, out decimal value)
-    {
-        value = 0m;
-        if (!element.TryGetProperty(propertyName, out var property))
-        {
-            return false;
-        }
-
-        if (property.ValueKind == JsonValueKind.Number)
-        {
-            return property.TryGetDecimal(out value);
-        }
-
-        if (property.ValueKind == JsonValueKind.String)
-        {
-            return decimal.TryParse(property.GetString(), NumberStyles.Any, CultureInfo.InvariantCulture, out value);
-        }
-
-        return false;
-    }
-
-    private static DateTimeOffset TryGetDate(JsonElement element, string propertyName)
-    {
-        if (!element.TryGetProperty(propertyName, out var property) ||
-            property.ValueKind != JsonValueKind.String ||
-            !DateTimeOffset.TryParse(property.GetString(), CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var value))
-        {
-            return default;
-        }
-
-        return value;
-    }
 
     private static string EnsureTrailingSlash(string value) =>
         value.EndsWith("/", StringComparison.Ordinal) ? value : $"{value}/";
@@ -602,9 +404,6 @@ public sealed class SecEdgarClient
 
         return int.MaxValue;
     }
-
-    private static SecFactPoint EmptyFactPoint() =>
-        new(0m, null, null, null, null, default, default);
 }
 
 public sealed record SecTickerProfile(
@@ -632,12 +431,3 @@ public sealed record SecCompanyFactsData(
     string CikPadded,
     string CompanyName,
     JsonElement CompanyFactsRoot);
-
-public sealed record SecFactPoint(
-    decimal Value,
-    string? Form,
-    string? Frame,
-    string? FiscalPeriod,
-    DateTimeOffset? StartDate,
-    DateTimeOffset EndDate,
-    DateTimeOffset FiledDate);

@@ -5,6 +5,7 @@ using Aira.Domain.Enums;
 using Aira.Infrastructure.Clients;
 using Aira.Infrastructure.Options;
 using Aira.Infrastructure.Providers;
+using Aira.Tests.Unit.Chat;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -263,6 +264,7 @@ public sealed class HybridLiveProviderTests
                     throw new InvalidOperationException($"Unexpected URI {request.RequestUri}");
                 }),
                 cache),
+            new FakeTimeProvider(new DateTimeOffset(2026, 3, 18, 0, 0, 0, TimeSpan.Zero)),
             NullLogger<HybridFinancialStatementProvider>.Instance);
 
         var result = await provider.GetAsync("AAPL", CancellationToken.None);
