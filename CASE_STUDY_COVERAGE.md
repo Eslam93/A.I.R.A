@@ -298,10 +298,10 @@ Current verification:
 
 - `dotnet build Aira.sln`
 - `dotnet test Aira.sln`
-- passing tests:
-  - 26 unit
-  - 15 integration
-  - 41 total
+- passing tests on .NET 10:
+  - 31 unit
+  - 16 integration
+  - 47 total
 
 ### Proactive or recurring monitoring
 

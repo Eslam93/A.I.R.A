@@ -312,8 +312,7 @@ public sealed class SecEdgarClient
             response.EnsureSuccessStatusCode();
         }
 
-        return await response.Content.ReadFromJsonAsync<JsonDocument>(SerializerOptions, cancellationToken)
-            ?? throw new InvalidOperationException($"SEC returned an empty JSON payload for {relativePath}.");
+        return await ReadJsonDocumentAsync(response, relativePath, cancellationToken);
     }
 
     private async Task<JsonDocument> GetJsonAsync(Uri absoluteUri, CancellationToken cancellationToken)
@@ -326,8 +325,21 @@ public sealed class SecEdgarClient
             response.EnsureSuccessStatusCode();
         }
 
-        return await response.Content.ReadFromJsonAsync<JsonDocument>(SerializerOptions, cancellationToken)
-            ?? throw new InvalidOperationException($"SEC returned an empty JSON payload for {absoluteUri}.");
+        return await ReadJsonDocumentAsync(response, absoluteUri.ToString(), cancellationToken);
+    }
+
+    // Since .NET 9, a JSON "null" body deserializes to a JsonDocument whose root is Null instead of to null,
+    // so check for both to keep the original "empty payload" failure.
+    private static async Task<JsonDocument> ReadJsonDocumentAsync(HttpResponseMessage response, string source, CancellationToken cancellationToken)
+    {
+        var document = await response.Content.ReadFromJsonAsync<JsonDocument>(SerializerOptions, cancellationToken);
+        if (document is null || document.RootElement.ValueKind == JsonValueKind.Null)
+        {
+            document?.Dispose();
+            throw new InvalidOperationException($"SEC returned an empty JSON payload for {source}.");
+        }
+
+        return document;
     }
 
     private static IReadOnlyList<SecRecentFiling> ParseRecentFilings(JsonElement root, string cikPadded)

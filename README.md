@@ -1,6 +1,6 @@
 # A.I.R.A.
 
-A.I.R.A. is an autonomous investment research backend built with .NET 8. It can analyze a publicly traded company, run the work asynchronously, show observable progress, return a structured report, and let the user chat with the completed report through a grounded OpenAI Responses flow.
+A.I.R.A. is an autonomous investment research backend built with .NET 10. It can analyze a publicly traded company, run the work asynchronously, show observable progress, return a structured report, and let the user chat with the completed report through a grounded OpenAI Responses flow.
 
 The repository contains:
 
@@ -945,6 +945,8 @@ Current launch profiles:
 - `http://localhost:5214`
 - `https://localhost:7004`
 
+If you use the `https` profile, trust the development certificate once with `dotnet dev-certs https --trust`, and run it again after moving to the .NET 10 SDK.
+
 ## Run With Live Providers
 
 To get live provider data, configure:
@@ -1033,13 +1035,13 @@ Run the full suite:
 dotnet test Aira.sln
 ```
 
-Current validation status from the latest full pass:
+Current validation status from the latest full pass on .NET 10:
 
 - `dotnet build Aira.sln` passed
 - `dotnet test Aira.sln` passed
-- 41 tests total
-  - 26 unit
-  - 15 integration
+- 47 tests total
+  - 31 unit
+  - 16 integration
 
 The test suite covers:
 
@@ -1048,10 +1050,13 @@ The test suite covers:
 - state transitions
 - deterministic scoring rules
 - live-provider hybrid behavior
+- JSON `null` provider payloads
+- Responses API stream parsing
 - report synthesis validation and repair mapping
 - prompt loading
 - report chat thread expiry and tool loop behavior
 - Razor Pages rendering
+- the Swagger document
 - SignalR report chat flows
 - standard and autonomous end-to-end flows
 

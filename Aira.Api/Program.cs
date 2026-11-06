@@ -50,5 +50,3 @@ app.MapRazorPages();
 app.MapHub<ReportChatHub>("/hubs/report-chat");
 
 app.Run();
-
-public partial class Program;

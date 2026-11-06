@@ -93,8 +93,9 @@ public sealed class HybridMarketSnapshotProvider : IMarketSnapshotProvider
                     : ToMockFallback(fallback, "Twelve Data returned a non-success response, so the seeded mock snapshot was used.");
             }
 
+            // Since .NET 9, a JSON "null" body deserializes to a JsonDocument whose root is Null instead of to null.
             var payload = await response.Content.ReadFromJsonAsync<JsonDocument>(SerializerOptions, cancellationToken);
-            if (payload is null)
+            if (payload is null || payload.RootElement.ValueKind == JsonValueKind.Null)
             {
                 return mode == ResearchExecutionMode.LiveRequired
                     ? ProviderResult<MarketSnapshot>.TransientFailure("Twelve Data returned an empty payload.", false, ProviderOrigin.Live, "Twelve Data")
