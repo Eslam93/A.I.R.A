@@ -15,12 +15,13 @@ The important default behavior is:
 
 Install:
 
-- .NET 8 SDK
+- .NET 10 SDK
 - Git
 
 Optional but useful:
 
 - Docker Desktop, if you want to run the container version
+- Visual Studio 2026, or VS Code with the C# Dev Kit, if you want an IDE (Visual Studio 2022 does not support .NET 10)
 
 ## 1. Clone the Repository
 
@@ -206,7 +207,7 @@ dotnet run --project Aira.Api --no-launch-profile
 
 Make sure:
 
-- you are using .NET 8 SDK
+- you are using the .NET 10 SDK
 - you are running commands from the repository root
 
 ## 12. When You Want More Than the No-Key Path

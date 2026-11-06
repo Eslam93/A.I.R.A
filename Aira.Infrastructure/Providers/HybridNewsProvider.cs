@@ -94,8 +94,9 @@ public sealed class HybridNewsProvider : INewsProvider
                     : ToMockFallback(fallback, "Alpha Vantage returned a non-success response, so the seeded mock news coverage was used.");
             }
 
+            // Since .NET 9, a JSON "null" body deserializes to a JsonDocument whose root is Null instead of to null.
             var payload = await response.Content.ReadFromJsonAsync<JsonDocument>(SerializerOptions, cancellationToken);
-            if (payload is null)
+            if (payload is null || payload.RootElement.ValueKind == JsonValueKind.Null)
             {
                 return mode == ResearchExecutionMode.LiveRequired
                     ? ProviderResult<NewsCoverage>.TransientFailure("Alpha Vantage returned an empty payload.", false, ProviderOrigin.Live, "Alpha Vantage")

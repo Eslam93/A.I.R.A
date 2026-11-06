@@ -78,14 +78,8 @@ public sealed class ResponsesApi : IResponsesApi
         string? eventName = null;
         var dataLines = new List<string>();
 
-        while (!reader.EndOfStream)
+        while (await reader.ReadLineAsync(timeoutCts.Token) is { } line)
         {
-            var line = await reader.ReadLineAsync(timeoutCts.Token);
-            if (line is null)
-            {
-                break;
-            }
-
             if (line.Length == 0)
             {
                 completedResponse = await HandleSseEventAsync(eventName, dataLines, onStreamEvent);

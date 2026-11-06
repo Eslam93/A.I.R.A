@@ -331,6 +331,74 @@ public sealed class HybridLiveProviderTests
         Assert.Contains("sec.gov/Archives/edgar/data", result.Value.Items[0].Url);
     }
 
+    // Since .NET 9, a JSON "null" body deserializes to a JsonDocument whose root is Null instead of to null.
+    // These tests pin the original "empty payload" handling for that case.
+    [Fact]
+    public async Task HybridMarketSnapshotProvider_Treats_A_Json_Null_Body_As_An_Empty_Payload()
+    {
+        var provider = new HybridMarketSnapshotProvider(
+            new MockMarketSnapshotProvider(_catalog, new JobExecutionContextAccessor()),
+            new HttpClient(new RoutedHandler(_ => JsonResponse("null"))),
+            Options.Create(new TwelveDataOptions
+            {
+                Enabled = true,
+                ApiKey = "test-key",
+                BaseUrl = "https://api.twelvedata.com/"
+            }),
+            TimeProvider.System,
+            NullLogger<HybridMarketSnapshotProvider>.Instance);
+
+        var result = await provider.GetAsync("AAPL", CancellationToken.None);
+
+        Assert.Equal(ProviderOrigin.Mock, result.Origin);
+        Assert.True(result.FallbackOccurred);
+        Assert.Contains("returned an empty payload", result.FallbackReason, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task HybridNewsProvider_Treats_A_Json_Null_Body_As_An_Empty_Payload()
+    {
+        var provider = new HybridNewsProvider(
+            new MockNewsProvider(_catalog),
+            new HttpClient(new RoutedHandler(_ => JsonResponse("null"))),
+            Options.Create(new AlphaVantageOptions
+            {
+                Enabled = true,
+                ApiKey = "test-key",
+                BaseUrl = "https://www.alphavantage.co/"
+            }),
+            TimeProvider.System,
+            NullLogger<HybridNewsProvider>.Instance);
+
+        var result = await provider.GetAsync("AAPL", CancellationToken.None);
+
+        Assert.Equal(ProviderOrigin.Mock, result.Origin);
+        Assert.True(result.FallbackOccurred);
+        Assert.Contains("returned an empty payload", result.FallbackReason, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task SecEdgarClient_Reports_An_Empty_Payload_For_A_Json_Null_Body()
+    {
+        using var cache = new MemoryCache(new MemoryCacheOptions());
+        var secClient = CreateSecClient(
+            new RoutedHandler(request =>
+                request.RequestUri!.AbsoluteUri.Contains("company_tickers_exchange.json", StringComparison.Ordinal)
+                    ? JsonResponse("""
+                        {
+                          "fields": ["cik", "name", "ticker", "exchange"],
+                          "data": [[320193, "Apple Inc.", "AAPL", "Nasdaq"]]
+                        }
+                        """)
+                    : JsonResponse("null")),
+            cache);
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => secClient.GetCompanyFactsAsync("AAPL", CancellationToken.None));
+
+        Assert.Contains("empty JSON payload", exception.Message, StringComparison.Ordinal);
+    }
+
     private static SecEdgarClient CreateSecClient(HttpMessageHandler handler, MemoryCache cache) =>
         new(
             new HttpClient(handler),

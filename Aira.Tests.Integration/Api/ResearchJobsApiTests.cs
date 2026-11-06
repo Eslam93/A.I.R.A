@@ -64,7 +64,8 @@ public sealed class ResearchJobsApiTests
 
         Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
         var pending = await response.Content.ReadFromJsonAsync<PendingResearchJobResultResponse>(JsonOptions);
-        Assert.Contains(pending!.Status, [JobStatus.Queued, JobStatus.Running]);
+        JobStatus[] pendingStatuses = [JobStatus.Queued, JobStatus.Running];
+        Assert.Contains(pending!.Status, pendingStatuses);
     }
 
     [Fact]
@@ -219,7 +220,7 @@ public sealed class ResearchJobsApiTests
         var accepted = await SubmitAsync(client, "AAPL");
         var result = await WaitForCompletedResultAsync(client, accepted.JobId);
 
-        var marketUsage = Assert.Single(result.ProviderUsage.Where(usage => usage.Domain == SourceType.MarketSnapshot));
+        var marketUsage = Assert.Single(result.ProviderUsage, usage => usage.Domain == SourceType.MarketSnapshot);
         Assert.Equal(ProviderOrigin.Mock, marketUsage.Origin);
         Assert.True(marketUsage.FallbackOccurred);
         Assert.Contains("Twelve Data", marketUsage.FallbackReason, StringComparison.Ordinal);
