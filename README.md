@@ -1,6 +1,6 @@
-# A.I.R.A.
+# Proofsheet
 
-A.I.R.A. is an autonomous investment research backend built with .NET 10. It can analyze a publicly traded company, run the work asynchronously, show observable progress, return a structured report, and let the user chat with the completed report through a grounded OpenAI Responses flow.
+Proofsheet is an autonomous investment research backend built with .NET 10. It can analyze a publicly traded company, run the work asynchronously, show observable progress, return a structured report, and let the user chat with the completed report through a grounded OpenAI Responses flow.
 
 The repository contains:
 
@@ -11,7 +11,7 @@ The repository contains:
 - a standard fixed workflow and an opt-in autonomous coordinator/specialist workflow
 - report-grounded chat over SignalR
 
-This implementation was built against the A.I.R.A. case-study goal of combining data retrieval, reasoning, structured outputs, and explainability in one backend service.
+Proofsheet started as an implementation of the A.I.R.A case study, whose goal was to combine data retrieval, reasoning, structured outputs, and explainability in one backend service.
 
 ## Contents
 
@@ -42,7 +42,7 @@ This implementation was built against the A.I.R.A. case-study goal of combining 
 
 ## What This Repo Does
 
-At a high level, A.I.R.A. supports this flow:
+At a high level, Proofsheet supports this flow:
 
 1. Search for a company or ticker.
 2. Submit a research job.
@@ -177,27 +177,27 @@ Core runtime sequence:
 
 ## Solution Structure
 
-- `Aira.Api`
+- `Proofsheet.Api`
   - controllers
   - Razor Pages UI
   - SignalR hub
   - middleware
   - prompt files
   - composition root
-- `Aira.Application`
+- `Proofsheet.Application`
   - orchestration
   - submission/query services
   - state machine
   - result/status models
   - report-chat orchestration
   - autonomous orchestration
-- `Aira.Domain`
+- `Proofsheet.Domain`
   - provider contracts
   - reasoner contracts
   - enums
   - domain models
   - deterministic scoring services
-- `Aira.Infrastructure`
+- `Proofsheet.Infrastructure`
   - live provider clients
   - mock providers
   - queue/store implementations
@@ -206,7 +206,7 @@ Core runtime sequence:
   - prompt providers
   - execution-mode resolution
   - ticker directory resolution
-- `Aira.Tests.Unit`
+- `Proofsheet.Tests.Unit`
   - validation
   - scoring
   - submission semantics
@@ -214,7 +214,7 @@ Core runtime sequence:
   - prompt loading
   - report chat services
   - autonomous coordinator logic
-- `Aira.Tests.Integration`
+- `Proofsheet.Tests.Integration`
   - API flows
   - UI rendering
   - SignalR chat flows
@@ -380,7 +380,7 @@ All non-success API errors use RFC 7807 `ProblemDetails`.
 
 ## UI Flow
 
-The built-in UI is served from `Aira.Api` and is part of the same app.
+The built-in UI is served from `Proofsheet.Api` and is part of the same app.
 
 ### Pages
 
@@ -796,8 +796,8 @@ The chat model can use:
 
 Configuration comes from:
 
-- `Aira.Api/appsettings.json`
-- `Aira.Api/appsettings.Development.json`
+- `Proofsheet.Api/appsettings.json`
+- `Proofsheet.Api/appsettings.Development.json`
 - environment variables
 - `.env.example`
 - ASP.NET user-secrets if you choose to use them locally
@@ -873,7 +873,7 @@ Configuration comes from:
 ```bash
 ResearchJobs__Mode=Hybrid
 SecEdgar__Enabled=true
-SecEdgar__UserAgent="AIRA/1.0 you@example.com"
+SecEdgar__UserAgent="Proofsheet/1.0 you@example.com"
 TwelveData__Enabled=true
 TwelveData__ApiKey=your_twelve_data_key
 AlphaVantage__Enabled=true
@@ -889,7 +889,7 @@ OpenAiResponses__ApiKey=your_openai_key
 OpenAiResponses__ReportModel=gpt-5.4-nano
 OpenAiResponses__ChatModel=gpt-5.4-nano
 SecEdgar__Enabled=true
-SecEdgar__UserAgent="AIRA/1.0 you@example.com"
+SecEdgar__UserAgent="Proofsheet/1.0 you@example.com"
 TwelveData__Enabled=true
 TwelveData__ApiKey=your_twelve_data_key
 AlphaVantage__Enabled=true
@@ -906,7 +906,7 @@ OpenAiResponses__CoordinatorModel=gpt-5.4-nano
 OpenAiResponses__SpecialistModel=gpt-5.4-nano
 OpenAiResponses__AllowAutonomousStandardFallback=false
 SecEdgar__Enabled=true
-SecEdgar__UserAgent="AIRA/1.0 you@example.com"
+SecEdgar__UserAgent="Proofsheet/1.0 you@example.com"
 TwelveData__Enabled=true
 TwelveData__ApiKey=your_twelve_data_key
 AlphaVantage__Enabled=true
@@ -921,8 +921,8 @@ From the repository root:
 
 ```bash
 dotnet restore
-dotnet build Aira.sln
-dotnet run --project Aira.Api --launch-profile http
+dotnet build Proofsheet.slnx
+dotnet run --project Proofsheet.Api --launch-profile http
 ```
 
 Open:
@@ -998,13 +998,13 @@ Without OpenAI configured:
 Build:
 
 ```bash
-docker build -t aira-backend .
+docker build -t proofsheet .
 ```
 
 Run:
 
 ```bash
-docker run --rm -p 8080:8080 aira-backend
+docker run --rm -p 8080:8080 proofsheet
 ```
 
 Run with live-required config:
@@ -1017,12 +1017,12 @@ docker run --rm -p 8080:8080 \
   -e OpenAiResponses__ReportModel=gpt-5.4-nano \
   -e OpenAiResponses__ChatModel=gpt-5.4-nano \
   -e SecEdgar__Enabled=true \
-  -e SecEdgar__UserAgent="AIRA/1.0 you@example.com" \
+  -e SecEdgar__UserAgent="Proofsheet/1.0 you@example.com" \
   -e TwelveData__Enabled=true \
   -e TwelveData__ApiKey=... \
   -e AlphaVantage__Enabled=true \
   -e AlphaVantage__ApiKey=... \
-  aira-backend
+  proofsheet
 ```
 
 The container listens on port `8080`.
@@ -1032,13 +1032,13 @@ The container listens on port `8080`.
 Run the full suite:
 
 ```bash
-dotnet test Aira.sln
+dotnet test Proofsheet.slnx
 ```
 
 Current validation status from the latest full pass on .NET 10:
 
-- `dotnet build Aira.sln` passed
-- `dotnet test Aira.sln` passed
+- `dotnet build Proofsheet.slnx` passed
+- `dotnet test Proofsheet.slnx` passed
 - 77 tests total
   - 61 unit
   - 16 integration
@@ -1050,7 +1050,7 @@ The test suite covers:
 - state transitions
 - deterministic scoring rules
 - live-provider hybrid behavior
-- SEC XBRL fact selection, against real company facts for 14 companies (see `Aira.Tests.Unit/Fixtures/Sec`)
+- SEC XBRL fact selection, against real company facts for 14 companies (see `Proofsheet.Tests.Unit/Fixtures/Sec`)
 - JSON `null` provider payloads
 - Responses API stream parsing
 - report synthesis validation and repair mapping
@@ -1101,7 +1101,7 @@ Additional repository docs:
 sequenceDiagram
     participant Client
     participant UI as Razor Pages UI
-    participant API as Aira.Api
+    participant API as Proofsheet.Api
     participant Queue as Channel Queue
     participant Worker as Background Worker
     participant Providers as Live or Mock Providers

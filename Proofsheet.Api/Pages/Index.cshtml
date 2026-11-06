@@ -1,0 +1,34 @@
+@page "/"
+@model Proofsheet.Api.Pages.IndexModel
+@{
+    ViewData["Title"] = "Research";
+}
+
+<section class="hero-stage">
+    <div class="hero-panel hero-panel--landing">
+        <div class="hero-panel__copy">
+            <h1>Generate an investment report.</h1>
+            <p class="hero-panel__lede">Search any US-listed company, generate the report, then chat with it.</p>
+        </div>
+
+        <form id="research-form" class="control-panel">
+            <div class="field-row field-row--stock">
+                <label class="field-label field-label--inline" for="identifier">Stock</label>
+                <div class="autocomplete-shell">
+                    <input id="identifier" name="identifier" class="select-input" type="text" placeholder="Search ticker or company" autocomplete="off" spellcheck="false" value="AAPL" />
+                    <div id="ticker-results" class="ticker-results" hidden></div>
+                </div>
+                <label class="field-label field-label--inline" for="research-mode">Mode</label>
+                <div class="select-shell">
+                    <select id="research-mode" name="researchMode" class="select-input">
+                        <option value="Standard" selected>Standard</option>
+                        <option value="Autonomous">Autonomous</option>
+                    </select>
+                </div>
+                <button id="generate-report" class="primary-button" type="submit">Generate Report</button>
+            </div>
+
+            <p id="form-message" class="form-message" aria-live="polite"></p>
+        </form>
+    </div>
+</section>

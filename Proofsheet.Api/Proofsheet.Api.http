@@ -1,0 +1,15 @@
+@Proofsheet.Api_HostAddress = http://localhost:5214
+
+POST {{Proofsheet.Api_HostAddress}}/api/v1/research-jobs
+Content-Type: application/json
+
+{
+  "identifier": "AAPL"
+}
+
+###
+
+GET {{Proofsheet.Api_HostAddress}}/health
+Accept: application/json
+
+###
